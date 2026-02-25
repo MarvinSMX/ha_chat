@@ -1,7 +1,10 @@
 """OneNote sync – Microsoft Graph, chunk, embed, ChromaDB."""
 import re
 import asyncio
+import logging
 from typing import Callable, Awaitable, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 GRAPH_SCOPES = "Notes.Read User.Read"
 GRAPH_PAGES_URL = "https://graph.microsoft.com/v1.0/me/onenote/pages"
@@ -66,6 +69,7 @@ async def get_token_via_device_flow(
     verification_uri = data.get("verification_uri")
     user_code = data.get("user_code")
     print(f"OneNote Anmeldung: Öffne {verification_uri} und gib ein: {user_code}")
+    logger.info("OneNote Device Flow: Öffne %s und gib ein: %s", verification_uri, user_code)
     token_url = f"{base}/token"
     for _ in range(60):
         await asyncio.sleep(5)
@@ -106,22 +110,34 @@ async def fetch_pages(access_token: str, session, notebook_id: Optional[str] = N
     if notebook_id or (notebook_name and notebook_name.strip()):
         # Notizbücher auflisten
         notebooks = await _fetch_all(GRAPH_NOTEBOOKS_URL, access_token, session)
+        logger.info("OneNote: %d Notizbücher abgerufen: %s", len(notebooks), [n.get("displayName") for n in notebooks])
         target_id = None
+        target_name = None
         if notebook_id and notebook_id.strip():
-            target_id = next((n.get("id") for n in notebooks if (n.get("id") or "") == notebook_id.strip()), None)
+            for n in notebooks:
+                if (n.get("id") or "") == notebook_id.strip():
+                    target_id = n.get("id")
+                    target_name = n.get("displayName")
+                    break
             if not target_id:
+                logger.warning("OneNote: Notizbuch mit ID %s nicht gefunden", notebook_id.strip())
                 return []
+            logger.info("OneNote: Notizbuch per ID gewählt: %s (%s)", target_name, target_id)
         else:
             name_needle = (notebook_name or "").strip().lower()
             for n in notebooks:
                 if (n.get("displayName") or "").strip().lower() == name_needle or name_needle in (n.get("displayName") or "").lower():
                     target_id = n.get("id")
+                    target_name = n.get("displayName")
                     break
             if not target_id:
+                logger.warning("OneNote: Kein Notizbuch mit Name passend zu '%s' gefunden", notebook_name.strip())
                 return []
+            logger.info("OneNote: Notizbuch per Name gewählt: %s (%s)", target_name, target_id)
         # Abschnitte des Notizbuchs
         sections_url = f"https://graph.microsoft.com/v1.0/me/onenote/notebooks/{target_id}/sections"
         sections = await _fetch_all(sections_url, access_token, session)
+        logger.info("OneNote: %d Abschnitte im Notizbuch: %s", len(sections), [s.get("displayName") for s in sections])
         pages = []
         for sec in sections:
             sec_id = sec.get("id")
@@ -137,10 +153,13 @@ async def fetch_pages(access_token: str, session, notebook_id: Optional[str] = N
                     nb = next((n for n in notebooks if n.get("id") == target_id), {})
                     p.setdefault("parentSection", {})["parentNotebook"] = {"displayName": nb.get("displayName", "")}
                 pages.append(p)
+        logger.info("OneNote: Insgesamt %d Seiten aus dem Notizbuch abgerufen", len(pages))
         return pages
 
     # Alle Seiten (bisheriges Verhalten)
-    return await _fetch_all(GRAPH_PAGES_URL, access_token, session)
+    pages = await _fetch_all(GRAPH_PAGES_URL, access_token, session)
+    logger.info("OneNote: Alle Notizbücher – %d Seiten abgerufen", len(pages))
+    return pages
 
 
 async def fetch_page_content(page_id: str, access_token: str, session) -> str:
@@ -157,19 +176,28 @@ async def run_sync(
     notebook_id: Optional[str] = None,
     notebook_name: Optional[str] = None,
 ) -> Tuple[int, Optional[str]]:
+    logger.info("OneNote-Sync gestartet (notebook_id=%s, notebook_name=%s)", notebook_id or "(alle)", notebook_name or "-")
     if not client_id or not client_secret:
+        logger.warning("OneNote-Sync: Microsoft Client-ID/Secret fehlt")
         return (0, None)
     if refresh_token:
         access_token = await refresh_access_token(tenant, client_id, client_secret, refresh_token, session)
+        if not access_token:
+            logger.warning("OneNote-Sync: Refresh-Token ungültig oder abgelaufen")
+            return (0, None)
     else:
+        logger.info("OneNote-Sync: Kein Refresh-Token – Device Flow wird ausgeführt")
         result = await get_token_via_device_flow(tenant, client_id, client_secret, session)
         if not result:
+            logger.warning("OneNote-Sync: Device Flow abgebrochen oder fehlgeschlagen")
             return (0, None)
         access_token, refresh_token = result
     if not access_token:
         return (0, None)
+    logger.info("OneNote-Sync: Zugriffstoken erhalten, rufe Seiten ab ...")
     pages = await fetch_pages(access_token, session, notebook_id=notebook_id, notebook_name=notebook_name)
     if not pages:
+        logger.info("OneNote-Sync: Keine Seiten gefunden")
         return (0, refresh_token)
     ids, documents, metadatas = [], [], []
     for page in pages:
@@ -188,7 +216,10 @@ async def run_sync(
             documents.append(chunk_text_val)
             metadatas.append(meta)
     if not documents:
+        logger.info("OneNote-Sync: Keine Chunks aus Seiten erzeugt")
         return (0, refresh_token)
+    logger.info("OneNote-Sync: %d Chunks werden embedded und in ChromaDB geschrieben ...", len(documents))
     embeddings = [await get_embedding_fn(d) for d in documents]
     await chromadb_add_fn(ids, documents, metadatas, embeddings)
+    logger.info("OneNote-Sync: Fertig – %d Dokumente in ChromaDB", len(documents))
     return (len(documents), refresh_token)
