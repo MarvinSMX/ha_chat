@@ -5,6 +5,21 @@ from typing import Callable, Awaitable, List, Optional, Tuple
 
 GRAPH_SCOPES = "Notes.Read User.Read"
 GRAPH_PAGES_URL = "https://graph.microsoft.com/v1.0/me/onenote/pages"
+GRAPH_NOTEBOOKS_URL = "https://graph.microsoft.com/v1.0/me/onenote/notebooks"
+
+
+async def _fetch_all(url: str, access_token: str, session, key: str = "value") -> List[dict]:
+    """Paginierte Abfrage bis alle Einträge da sind."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    out = []
+    while url:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status != 200:
+                break
+            data = await resp.json()
+        out.extend(data.get(key) or [])
+        url = (data.get("@odata.nextLink") or "").strip() or None
+    return out
 
 
 def _html_to_text(html: str) -> str:
@@ -80,17 +95,52 @@ async def refresh_access_token(
     return data.get("access_token")
 
 
-async def fetch_pages(access_token: str, session) -> List[dict]:
+async def fetch_pages(access_token: str, session, notebook_id: Optional[str] = None, notebook_name: Optional[str] = None) -> List[dict]:
+    """
+    Holt alle relevanten Seiten.
+    Wenn notebook_id oder notebook_name gesetzt: nur aus diesem Notizbuch (über Abschnitte).
+    Sonst: alle Seiten wie bisher über /me/onenote/pages.
+    """
     headers = {"Authorization": f"Bearer {access_token}"}
-    pages, url = [], GRAPH_PAGES_URL
-    while url:
-        async with session.get(url, headers=headers) as resp:
-            if resp.status != 200:
-                break
-            data = await resp.json()
-        pages.extend(data.get("value") or [])
-        url = (data.get("@odata.nextLink") or "").strip() or None
-    return pages
+
+    if notebook_id or (notebook_name and notebook_name.strip()):
+        # Notizbücher auflisten
+        notebooks = await _fetch_all(GRAPH_NOTEBOOKS_URL, access_token, session)
+        target_id = None
+        if notebook_id and notebook_id.strip():
+            target_id = next((n.get("id") for n in notebooks if (n.get("id") or "") == notebook_id.strip()), None)
+            if not target_id:
+                return []
+        else:
+            name_needle = (notebook_name or "").strip().lower()
+            for n in notebooks:
+                if (n.get("displayName") or "").strip().lower() == name_needle or name_needle in (n.get("displayName") or "").lower():
+                    target_id = n.get("id")
+                    break
+            if not target_id:
+                return []
+        # Abschnitte des Notizbuchs
+        sections_url = f"https://graph.microsoft.com/v1.0/me/onenote/notebooks/{target_id}/sections"
+        sections = await _fetch_all(sections_url, access_token, session)
+        pages = []
+        for sec in sections:
+            sec_id = sec.get("id")
+            if not sec_id:
+                continue
+            section_pages_url = f"https://graph.microsoft.com/v1.0/me/onenote/sections/{sec_id}/pages"
+            section_pages = await _fetch_all(section_pages_url, access_token, session)
+            # parentSection/parentNotebook für Metadaten ergänzen, falls nicht im Antwortformat
+            for p in section_pages:
+                if not p.get("parentSection"):
+                    p["parentSection"] = {"displayName": sec.get("displayName") or "", "id": sec_id}
+                if not p.get("parentSection", {}).get("parentNotebook"):
+                    p.setdefault("parentSection", {})["parentNotebook"] = next(
+                        ({"displayName": n.get("displayName")} for n in notebooks if n.get("id") == target_id), {}
+                pages.append(p)
+        return pages
+
+    # Alle Seiten (bisheriges Verhalten)
+    return await _fetch_all(GRAPH_PAGES_URL, access_token, session)
 
 
 async def fetch_page_content(page_id: str, access_token: str, session) -> str:
@@ -104,6 +154,8 @@ async def run_sync(
     get_embedding_fn: Callable[[str], Awaitable[List[float]]],
     chromadb_add_fn: Callable[..., Awaitable[None]],
     session,
+    notebook_id: Optional[str] = None,
+    notebook_name: Optional[str] = None,
 ) -> Tuple[int, Optional[str]]:
     if not client_id or not client_secret:
         return (0, None)
@@ -116,7 +168,7 @@ async def run_sync(
         access_token, refresh_token = result
     if not access_token:
         return (0, None)
-    pages = await fetch_pages(access_token, session)
+    pages = await fetch_pages(access_token, session, notebook_id=notebook_id, notebook_name=notebook_name)
     if not pages:
         return (0, refresh_token)
     ids, documents, metadatas = [], [], []

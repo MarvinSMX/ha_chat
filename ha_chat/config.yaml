@@ -27,6 +27,9 @@ options:
   microsoft_client_id: ""
   microsoft_client_secret: ""
   microsoft_tenant_id: "common"
+  # Nur dieses Notizbuch synchronisieren (optional; leer = alle Notizbücher)
+  onenote_notebook_id: ""
+  onenote_notebook_name: ""
   ha_url: ""
   ha_token: ""
 schema:
@@ -41,5 +44,7 @@ schema:
   microsoft_client_id: str
   microsoft_client_secret: str
   microsoft_tenant_id: str
+  onenote_notebook_id: str
+  onenote_notebook_name: str
   ha_url: str
   ha_token: str

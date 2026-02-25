@@ -156,8 +156,11 @@ async def handle_sync_onenote(request):
             )
 
         async with web.ClientSession() as session:
+            notebook_id = (opts.get("onenote_notebook_id") or "").strip() or None
+            notebook_name = (opts.get("onenote_notebook_name") or "").strip() or None
             count, new_refresh = await onenote_sync.run_sync(
-                tenant, client_id, client_secret, refresh_token, get_emb, add_fn, session
+                tenant, client_id, client_secret, refresh_token, get_emb, add_fn, session,
+                notebook_id=notebook_id, notebook_name=notebook_name,
             )
         if new_refresh and new_refresh != refresh_token:
             set_refresh_token(new_refresh)
