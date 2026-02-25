@@ -178,6 +178,33 @@ async def handle_sync_onenote(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def handle_onenote_status(request):
+    """Prüft, ob auf OneNote und ggf. das konfigurierte Notizbuch zugegriffen werden kann. GET /api/onenote_status"""
+    try:
+        opts = get_opts()
+        client_id = (opts.get("microsoft_client_id") or "").strip()
+        client_secret = (opts.get("microsoft_client_secret") or "").strip()
+        tenant = (opts.get("microsoft_tenant_id") or "common").strip()
+        refresh_token = get_refresh_token() or (opts.get("microsoft_refresh_token") or "").strip() or None
+        notebook_id = (opts.get("onenote_notebook_id") or "").strip() or None
+        notebook_name = (opts.get("onenote_notebook_name") or "").strip() or None
+        async with web.ClientSession() as session:
+            ok, message, notebooks, configured_found, configured_name = await onenote_sync.check_onenote_access(
+                tenant, client_id, client_secret, refresh_token, session,
+                notebook_id=notebook_id, notebook_name=notebook_name,
+            )
+        return web.json_response({
+            "success": ok,
+            "message": message,
+            "notebooks": notebooks,
+            "configured_notebook_found": configured_found,
+            "configured_notebook_name": configured_name,
+        })
+    except Exception as e:
+        logger.exception("OneNote-Status error: %s", e)
+        return web.json_response({"success": False, "message": str(e), "notebooks": [], "configured_notebook_found": None, "configured_notebook_name": None}, status=500)
+
+
 async def handle_execute_action(request):
     try:
         body = await request.json()
@@ -243,8 +270,10 @@ def create_app():
     app.router.add_route("OPTIONS", "/api/sync_onenote", handle_options)
     app.router.add_route("OPTIONS", "/api/execute_action", handle_options)
     app.router.add_route("OPTIONS", "/api/add_documents", handle_options)
+    app.router.add_route("OPTIONS", "/api/onenote_status", handle_options)
     app.router.add_post("/api/chat", handle_chat)
     app.router.add_post("/api/sync_onenote", handle_sync_onenote)
+    app.router.add_get("/api/onenote_status", handle_onenote_status)
     app.router.add_post("/api/execute_action", handle_execute_action)
     app.router.add_post("/api/add_documents", handle_add_documents)
     www = Path(__file__).parent / "www"

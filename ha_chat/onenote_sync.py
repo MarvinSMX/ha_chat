@@ -99,6 +99,58 @@ async def refresh_access_token(
     return data.get("access_token")
 
 
+async def check_onenote_access(
+    tenant: str, client_id: str, client_secret: str, refresh_token: Optional[str], session,
+    notebook_id: Optional[str] = None, notebook_name: Optional[str] = None,
+) -> Tuple[bool, str, List[dict], Optional[bool], Optional[str]]:
+    """
+    Prüft nur, ob auf OneNote zugegriffen werden kann und listet Notizbücher.
+    Returns: (success, message, notebooks_list, configured_notebook_found, configured_notebook_name)
+    """
+    logger.info("OneNote-Zugriffstest gestartet (notebook_id=%s, notebook_name=%s)", notebook_id or "-", notebook_name or "-")
+    if not client_id or not client_secret:
+        return (False, "Microsoft Client-ID/Secret fehlt", [], None, None)
+    if refresh_token:
+        access_token = await refresh_access_token(tenant, client_id, client_secret, refresh_token, session)
+        if not access_token:
+            logger.warning("OneNote-Zugriffstest: Refresh-Token ungültig")
+            return (False, "Refresh-Token ungültig oder abgelaufen", [], None, None)
+    else:
+        logger.info("OneNote-Zugriffstest: Kein Refresh-Token – bitte zuerst Sync ausführen (Device Flow)")
+        return (False, "Kein Refresh-Token. Einmal POST /api/sync_onenote ausführen und anmelden.", [], None, None)
+    try:
+        notebooks = await _fetch_all(GRAPH_NOTEBOOKS_URL, access_token, session)
+    except Exception as e:
+        logger.exception("OneNote-Zugriffstest: Fehler beim Abruf der Notizbücher: %s", e)
+        return (False, str(e), [], None, None)
+    logger.info("OneNote-Zugriffstest: %d Notizbücher abgerufen: %s", len(notebooks), [n.get("displayName") for n in notebooks])
+    nb_list = [{"id": n.get("id"), "displayName": n.get("displayName")} for n in notebooks]
+    found = None
+    found_name = None
+    if notebook_id and notebook_id.strip():
+        for n in notebooks:
+            if (n.get("id") or "") == notebook_id.strip():
+                found = True
+                found_name = n.get("displayName")
+                logger.info("OneNote-Zugriffstest: Konfiguriertes Notizbuch (ID) gefunden: %s", found_name)
+                break
+        if found is None:
+            logger.warning("OneNote-Zugriffstest: Notizbuch mit ID '%s' nicht gefunden", notebook_id.strip())
+            found = False
+    elif notebook_name and notebook_name.strip():
+        name_needle = notebook_name.strip().lower()
+        for n in notebooks:
+            if (n.get("displayName") or "").strip().lower() == name_needle or name_needle in (n.get("displayName") or "").lower():
+                found = True
+                found_name = n.get("displayName")
+                logger.info("OneNote-Zugriffstest: Konfiguriertes Notizbuch (Name) gefunden: %s (id=%s)", found_name, n.get("id"))
+                break
+        if found is None:
+            logger.warning("OneNote-Zugriffstest: Kein Notizbuch mit Name passend zu '%s' gefunden", notebook_name.strip())
+            found = False
+    return (True, "Zugriff auf OneNote OK", nb_list, found, found_name)
+
+
 async def fetch_pages(access_token: str, session, notebook_id: Optional[str] = None, notebook_name: Optional[str] = None) -> List[dict]:
     """
     Holt alle relevanten Seiten.
