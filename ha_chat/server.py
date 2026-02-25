@@ -8,7 +8,7 @@ import logging
 import os
 from pathlib import Path
 
-from aiohttp import web
+from aiohttp import web, ClientSession
 
 from chromadb_helper import chromadb_add, chromadb_query, make_doc_id, COLLECTION_NAME
 import azure_openai
@@ -164,7 +164,7 @@ async def handle_sync_onenote(request):
                 lambda: chromadb_add(CHROMADB_PATH, COLLECTION_NAME, ids, docs, metas, embs),
             )
 
-        async with web.ClientSession() as session:
+        async with ClientSession() as session:
             count, new_refresh = await onenote_sync.run_sync(
                 tenant, client_id, client_secret, refresh_token, get_emb, add_fn, session,
                 notebook_id=notebook_id, notebook_name=notebook_name,
@@ -188,7 +188,7 @@ async def handle_onenote_status(request):
         refresh_token = get_refresh_token() or (opts.get("microsoft_refresh_token") or "").strip() or None
         notebook_id = (opts.get("onenote_notebook_id") or "").strip() or None
         notebook_name = (opts.get("onenote_notebook_name") or "").strip() or None
-        async with web.ClientSession() as session:
+        async with ClientSession() as session:
             ok, message, notebooks, configured_found, configured_name = await onenote_sync.check_onenote_access(
                 tenant, client_id, client_secret, refresh_token, session,
                 notebook_id=notebook_id, notebook_name=notebook_name,
@@ -216,7 +216,7 @@ async def handle_execute_action(request):
         ha_token = (opts.get("ha_token") or "").strip()
         if not ha_url or not ha_token:
             return web.json_response({"error": "HA URL/Token in App-Optionen eintragen"}, status=400)
-        async with web.ClientSession() as session:
+        async with ClientSession() as session:
             async with session.post(
                 f"{ha_url.rstrip('/')}/api/conversation",
                 json={"text": utterance},
