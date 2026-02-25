@@ -134,8 +134,8 @@ async def fetch_pages(access_token: str, session, notebook_id: Optional[str] = N
                 if not p.get("parentSection"):
                     p["parentSection"] = {"displayName": sec.get("displayName") or "", "id": sec_id}
                 if not p.get("parentSection", {}).get("parentNotebook"):
-                    p.setdefault("parentSection", {})["parentNotebook"] = next(
-                        ({"displayName": n.get("displayName")} for n in notebooks if n.get("id") == target_id), {}
+                    nb = next((n for n in notebooks if n.get("id") == target_id), {})
+                    p.setdefault("parentSection", {})["parentNotebook"] = {"displayName": nb.get("displayName", "")}
                 pages.append(p)
         return pages
 
