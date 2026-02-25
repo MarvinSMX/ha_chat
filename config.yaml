@@ -1,0 +1,34 @@
+name: "HA Chat (OneNote RAG)"
+description: "Sidebar-Chat mit RAG über OneNote, ChromaDB und Azure OpenAI. Keine Integration nötig."
+version: "1.0.0"
+slug: "ha_chat"
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+startup: application
+ports:
+  8765/tcp: 8765
+options:
+  azure_endpoint: ""
+  azure_api_key: ""
+  azure_embedding_deployment: "text-embedding-ada-002"
+  azure_chat_deployment: "gpt-4o"
+  microsoft_client_id: ""
+  microsoft_client_secret: ""
+  microsoft_tenant_id: "common"
+  ha_url: ""
+  ha_token: ""
+schema:
+  azure_endpoint: str
+  azure_api_key: str
+  azure_embedding_deployment: str
+  azure_chat_deployment: str
+  microsoft_client_id: str
+  microsoft_client_secret: str
+  microsoft_tenant_id: str
+  ha_url: str
+  ha_token: str

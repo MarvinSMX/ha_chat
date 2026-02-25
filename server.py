@@ -1,0 +1,241 @@
+"""
+HA Chat (OneNote RAG) – HTTP-Server für die Add-on-App.
+Liest Optionen aus /data/options.json, ChromaDB unter /data/chromadb.
+"""
+import asyncio
+import json
+import logging
+import os
+from pathlib import Path
+
+from aiohttp import web
+
+from chromadb_helper import chromadb_add, chromadb_query, make_doc_id, COLLECTION_NAME
+import azure_openai
+import onenote_sync
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+OPTIONS_PATH = Path("/data/options.json")
+REFRESH_TOKEN_PATH = Path("/data/microsoft_refresh_token")
+CHROMADB_PATH = "/data/chromadb"
+OPTIONS = {}
+
+
+def load_options():
+    global OPTIONS
+    if OPTIONS_PATH.exists():
+        with open(OPTIONS_PATH) as f:
+            OPTIONS.update(json.load(f))
+    return OPTIONS
+
+
+def save_options():
+    with open(OPTIONS_PATH, "w") as f:
+        json.dump(OPTIONS, f, indent=2)
+
+
+def get_refresh_token():
+    if REFRESH_TOKEN_PATH.exists():
+        return REFRESH_TOKEN_PATH.read_text().strip() or None
+    return OPTIONS.get("microsoft_refresh_token") or None
+
+
+def set_refresh_token(token: str):
+    REFRESH_TOKEN_PATH.write_text(token)
+
+
+def get_opts():
+    load_options()
+    return OPTIONS
+
+
+def _add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+
+
+@web.middleware
+async def cors_middleware(request, handler):
+    if request.method == "OPTIONS":
+        return web.Response(headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+        })
+    resp = await handler(request)
+    _add_cors_headers(resp)
+    return resp
+
+
+async def handle_options(request):
+    return web.Response(headers={
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+    })
+
+
+async def handle_chat(request):
+    try:
+        body = await request.json()
+        message = (body.get("message") or "").strip()
+        if not message:
+            return web.json_response({"error": "message fehlt"}, status=400)
+        opts = get_opts()
+        endpoint = opts.get("azure_endpoint") or ""
+        api_key = opts.get("azure_api_key") or ""
+        emb_deploy = opts.get("azure_embedding_deployment") or "text-embedding-ada-002"
+        chat_deploy = opts.get("azure_chat_deployment") or "gpt-4o"
+        if not all([endpoint, api_key, emb_deploy, chat_deploy]):
+            return web.json_response({"error": "Azure OpenAI nicht konfiguriert"}, status=400)
+
+        query_embedding = await azure_openai.get_embedding(endpoint, api_key, emb_deploy, message)
+        loop = asyncio.get_event_loop()
+        docs, metas, dists = await loop.run_in_executor(
+            None,
+            lambda: chromadb_query(CHROMADB_PATH, COLLECTION_NAME, query_embedding, n_results=8),
+        )
+        sources = []
+        context_parts = []
+        for i, (doc, meta, dist) in enumerate(zip(docs, metas, dists)):
+            title = (meta or {}).get("title") or (meta or {}).get("section") or f"Quelle {i+1}"
+            url = (meta or {}).get("url") or ""
+            sources.append({"title": title, "url": url, "score": 1.0 - (dist or 0) if dist is not None else 1.0})
+            context_parts.append(f"[{i+1}] {doc}")
+        context_text = "\n\n".join(context_parts) if context_parts else "(Keine passenden Dokumente gefunden.)"
+        system_prompt = "Du bist ein hilfreicher Assistent. Antworte knapp auf Deutsch. Nenne Quellen (z.B. [1], [2]). Erfinde nichts."
+        user_prompt = f"Kontext:\n\n{context_text}\n\n---\n\nFrage: {message}"
+        answer = await azure_openai.chat_completion(endpoint, api_key, chat_deploy, system_prompt, user_prompt)
+        return web.json_response({"answer": answer, "sources": sources, "actions": []})
+    except Exception as e:
+        logger.exception("Chat error: %s", e)
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def handle_sync_onenote(request):
+    try:
+        opts = get_opts()
+        client_id = (opts.get("microsoft_client_id") or "").strip()
+        client_secret = (opts.get("microsoft_client_secret") or "").strip()
+        tenant = (opts.get("microsoft_tenant_id") or "common").strip()
+        refresh_token = get_refresh_token() or (opts.get("microsoft_refresh_token") or "").strip() or None
+        if not client_id or not client_secret:
+            return web.json_response({"error": "Microsoft Client-ID/Secret fehlt"}, status=400)
+        endpoint = opts.get("azure_endpoint")
+        api_key = opts.get("azure_api_key")
+        emb_deploy = opts.get("azure_embedding_deployment")
+        if not all([endpoint, api_key, emb_deploy]):
+            return web.json_response({"error": "Azure OpenAI (Embedding) fehlt"}, status=400)
+
+        async def get_emb(text):
+            return await azure_openai.get_embedding(endpoint, api_key, emb_deploy, text)
+
+        loop = asyncio.get_event_loop()
+
+        async def add_fn(ids, docs, metas, embs):
+            await loop.run_in_executor(
+                None,
+                lambda: chromadb_add(CHROMADB_PATH, COLLECTION_NAME, ids, docs, metas, embs),
+            )
+
+        async with web.ClientSession() as session:
+            count, new_refresh = await onenote_sync.run_sync(
+                tenant, client_id, client_secret, refresh_token, get_emb, add_fn, session
+            )
+        if new_refresh and new_refresh != refresh_token:
+            set_refresh_token(new_refresh)
+        return web.json_response({"documents_added": count})
+    except Exception as e:
+        logger.exception("Sync error: %s", e)
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def handle_execute_action(request):
+    try:
+        body = await request.json()
+        utterance = (body.get("utterance") or "").strip()
+        if not utterance:
+            return web.json_response({"error": "utterance fehlt"}, status=400)
+        opts = get_opts()
+        ha_url = (opts.get("ha_url") or "").strip()
+        ha_token = (opts.get("ha_token") or "").strip()
+        if not ha_url or not ha_token:
+            return web.json_response({"error": "HA URL/Token in App-Optionen eintragen"}, status=400)
+        async with web.ClientSession() as session:
+            async with session.post(
+                f"{ha_url.rstrip('/')}/api/conversation",
+                json={"text": utterance},
+                headers={"Authorization": f"Bearer {ha_token}", "Content-Type": "application/json"},
+            ) as resp:
+                data = await resp.json() if resp.status == 200 else {}
+        reply = (data.get("response") or data.get("reply") or {}).get("response") or data.get("response") or str(data)
+        return web.json_response({"response": reply})
+    except Exception as e:
+        logger.exception("Execute error: %s", e)
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def handle_add_documents(request):
+    try:
+        body = await request.json()
+        documents = body.get("documents") or []
+        if not documents:
+            return web.json_response({"ok": True})
+        opts = get_opts()
+        endpoint = opts.get("azure_endpoint")
+        api_key = opts.get("azure_api_key")
+        emb_deploy = opts.get("azure_embedding_deployment")
+        ids, docs, metas, embeddings = [], [], [], []
+        for item in documents:
+            content = item.get("content") or ""
+            meta = item.get("metadata") or {}
+            emb = item.get("embedding")
+            ids.append(make_doc_id(meta))
+            docs.append(content)
+            metas.append(meta)
+            embeddings.append(emb)
+        if not all(embeddings) and endpoint and api_key and emb_deploy:
+            for i, (content, emb) in enumerate(zip(docs, embeddings)):
+                if emb is None:
+                    embeddings[i] = await azure_openai.get_embedding(endpoint, api_key, emb_deploy, content)
+        elif not all(embeddings):
+            return web.json_response({"error": "embedding fehlt oder Azure konfigurieren"}, status=400)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: chromadb_add(CHROMADB_PATH, COLLECTION_NAME, ids, docs, metas, embeddings),
+        )
+        return web.json_response({"ok": True, "count": len(ids)})
+    except Exception as e:
+        logger.exception("Add documents error: %s", e)
+        return web.json_response({"error": str(e)}, status=500)
+
+
+def create_app():
+    app = web.Application(middlewares=[cors_middleware])
+    app.router.add_route("OPTIONS", "/api/chat", handle_options)
+    app.router.add_route("OPTIONS", "/api/sync_onenote", handle_options)
+    app.router.add_route("OPTIONS", "/api/execute_action", handle_options)
+    app.router.add_route("OPTIONS", "/api/add_documents", handle_options)
+    app.router.add_post("/api/chat", handle_chat)
+    app.router.add_post("/api/sync_onenote", handle_sync_onenote)
+    app.router.add_post("/api/execute_action", handle_execute_action)
+    app.router.add_post("/api/add_documents", handle_add_documents)
+    www = Path(__file__).parent / "www"
+    if www.exists():
+        app.router.add_get("/", lambda r: web.FileResponse(www / "index.html"))
+        app.router.add_static("/", www, name="www")
+    return app
+
+
+def main():
+    load_options()
+    app = create_app()
+    web.run_app(app, host="0.0.0.0", port=8765)
+
+
+if __name__ == "__main__":
+    main()
