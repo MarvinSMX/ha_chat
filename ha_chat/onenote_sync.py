@@ -1,6 +1,7 @@
 """OneNote sync – Microsoft Graph, chunk, embed, ChromaDB."""
 import re
 import asyncio
+import json
 import logging
 from typing import Callable, Awaitable, List, Optional, Tuple
 
@@ -77,22 +78,26 @@ async def get_token_via_device_flow(
             "client_id": client_id, "client_secret": client_secret,
             "grant_type": "urn:ietf:params:oauth:grant-type:device_code", "device_code": device_code,
         }) as tok_resp:
-            if tok_resp.status != 200:
-                body = await tok_resp.text()
-                logger.warning("OneNote Device Flow: Token-Antwort %s: %s", tok_resp.status, body[:200])
-                break
-            tok_data = await tok_resp.json()
-        if "access_token" in tok_data:
+            body = await tok_resp.text()
+            status = tok_resp.status
+        try:
+            tok_data = json.loads(body) if body else {}
+        except Exception:
+            tok_data = {}
+        if status == 200 and "access_token" in tok_data:
             logger.info("OneNote Device Flow: Anmeldung erfolgreich")
             return (tok_data["access_token"], tok_data.get("refresh_token", ""))
         err = tok_data.get("error")
-        if err != "authorization_pending":
-            logger.warning(
-                "OneNote Device Flow beendet: error=%s description=%s",
-                err,
-                tok_data.get("error_description", ""),
-            )
-            break
+        if err == "authorization_pending":
+            continue
+        if status != 200:
+            logger.warning("OneNote Device Flow: Token-Antwort %s: %s", status, body[:300])
+        logger.warning(
+            "OneNote Device Flow beendet: error=%s description=%s",
+            err,
+            tok_data.get("error_description", ""),
+        )
+        break
     return None
 
 
