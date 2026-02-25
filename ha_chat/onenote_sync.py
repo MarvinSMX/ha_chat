@@ -69,18 +69,29 @@ async def get_token_via_device_flow(
     verification_uri = data.get("verification_uri")
     user_code = data.get("user_code")
     print(f"OneNote Anmeldung: Öffne {verification_uri} und gib ein: {user_code}")
-    logger.info("OneNote Device Flow: Öffne %s und gib ein: %s", verification_uri, user_code)
+    logger.info("OneNote Device Flow: Öffne %s und gib ein: %s (Warte bis zu 5 Min. auf Anmeldung)", verification_uri, user_code)
     token_url = f"{base}/token"
-    for _ in range(60):
+    for i in range(60):
         await asyncio.sleep(5)
         async with session.post(token_url, data={
             "client_id": client_id, "client_secret": client_secret,
             "grant_type": "urn:ietf:params:oauth:grant-type:device_code", "device_code": device_code,
         }) as tok_resp:
+            if tok_resp.status != 200:
+                body = await tok_resp.text()
+                logger.warning("OneNote Device Flow: Token-Antwort %s: %s", tok_resp.status, body[:200])
+                break
             tok_data = await tok_resp.json()
         if "access_token" in tok_data:
+            logger.info("OneNote Device Flow: Anmeldung erfolgreich")
             return (tok_data["access_token"], tok_data.get("refresh_token", ""))
-        if tok_data.get("error") != "authorization_pending":
+        err = tok_data.get("error")
+        if err != "authorization_pending":
+            logger.warning(
+                "OneNote Device Flow beendet: error=%s description=%s",
+                err,
+                tok_data.get("error_description", ""),
+            )
             break
     return None
 
