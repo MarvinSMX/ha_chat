@@ -1,11 +1,10 @@
-ARG BUILD_FROM
-FROM $BUILD_FROM
-
-RUN apk add --no-cache python3 py3-pip
+# Debian-basiert, damit onnxruntime (ChromaDB-Abhängigkeit) als Wheel installiert werden kann.
+# Alpine hat keine passenden onnxruntime-Wheels; der Supervisor baut trotzdem für alle Architekturen.
+FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 COPY *.py ./
 COPY www/ ./www/
 COPY run.sh /

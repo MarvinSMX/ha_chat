@@ -1,6 +1,5 @@
-#!/usr/bin/with-contenv bashio
-
+#!/bin/sh
+set -e
 echo "HA Chat (OneNote RAG) startet..."
-
 cd /app
-python3 -m server
+exec python3 -m server
