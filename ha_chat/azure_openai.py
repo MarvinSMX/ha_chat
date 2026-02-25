@@ -16,7 +16,7 @@ def _sync_embedding(endpoint: str, api_key: str, deployment: str, text: str) -> 
 
 def _sync_chat(
     endpoint: str, api_key: str, deployment: str,
-    system_prompt: str, user_message: str, temperature: float = 0.3,
+    system_prompt: str, user_message: str, temperature: float = 1.0,
 ) -> str:
     import openai
     client = openai.AzureOpenAI(
@@ -24,14 +24,17 @@ def _sync_chat(
         api_key=api_key,
         api_version="2024-02-01",
     )
-    r = client.chat.completions.create(
-        model=deployment,
-        messages=[
+    kwargs = {
+        "model": deployment,
+        "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
-        temperature=temperature,
-    )
+    }
+    # Viele Azure-Modelle erlauben nur temperature=1 (Default)
+    if temperature != 1.0:
+        kwargs["temperature"] = temperature
+    r = client.chat.completions.create(**kwargs)
     return (r.choices[0].message.content or "").strip()
 
 
@@ -45,7 +48,7 @@ async def get_embedding(endpoint: str, api_key: str, deployment: str, text: str)
 
 async def chat_completion(
     endpoint: str, api_key: str, deployment: str,
-    system_prompt: str, user_message: str, temperature: float = 0.3,
+    system_prompt: str, user_message: str, temperature: float = 1.0,
 ) -> str:
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(
