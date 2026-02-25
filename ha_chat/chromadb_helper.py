@@ -42,7 +42,7 @@ def chromadb_query(
     n_results: int = 8,
 ) -> tuple:
     client = _get_client(path)
-    coll = client.get_collection(name=collection_name)
+    coll = _ensure_collection(client, collection_name)
     result = coll.query(
         query_embeddings=[query_embedding],
         n_results=n_results,
