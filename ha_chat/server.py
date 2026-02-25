@@ -51,6 +51,22 @@ def get_opts():
     return OPTIONS
 
 
+def _embedding_config(opts):
+    """Endpoint, API-Key und Deployment für Embedding (mit Fallback auf gemeinsame Azure-Felder)."""
+    endpoint = (opts.get("azure_embedding_endpoint") or opts.get("azure_endpoint") or "").strip()
+    api_key = (opts.get("azure_embedding_api_key") or opts.get("azure_api_key") or "").strip()
+    deployment = (opts.get("azure_embedding_deployment") or "text-embedding-ada-002").strip()
+    return endpoint, api_key, deployment
+
+
+def _chat_config(opts):
+    """Endpoint, API-Key und Deployment für Chat/LLM (mit Fallback auf gemeinsame Azure-Felder)."""
+    endpoint = (opts.get("azure_chat_endpoint") or opts.get("azure_endpoint") or "").strip()
+    api_key = (opts.get("azure_chat_api_key") or opts.get("azure_api_key") or "").strip()
+    deployment = (opts.get("azure_chat_deployment") or "gpt-4o").strip()
+    return endpoint, api_key, deployment
+
+
 def _add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
@@ -85,14 +101,14 @@ async def handle_chat(request):
         if not message:
             return web.json_response({"error": "message fehlt"}, status=400)
         opts = get_opts()
-        endpoint = opts.get("azure_endpoint") or ""
-        api_key = opts.get("azure_api_key") or ""
-        emb_deploy = opts.get("azure_embedding_deployment") or "text-embedding-ada-002"
-        chat_deploy = opts.get("azure_chat_deployment") or "gpt-4o"
-        if not all([endpoint, api_key, emb_deploy, chat_deploy]):
-            return web.json_response({"error": "Azure OpenAI nicht konfiguriert"}, status=400)
+        emb_endpoint, emb_api_key, emb_deploy = _embedding_config(opts)
+        chat_endpoint, chat_api_key, chat_deploy = _chat_config(opts)
+        if not all([emb_endpoint, emb_api_key, emb_deploy]):
+            return web.json_response({"error": "Azure OpenAI (Embedding) nicht konfiguriert"}, status=400)
+        if not all([chat_endpoint, chat_api_key, chat_deploy]):
+            return web.json_response({"error": "Azure OpenAI (Chat/LLM) nicht konfiguriert"}, status=400)
 
-        query_embedding = await azure_openai.get_embedding(endpoint, api_key, emb_deploy, message)
+        query_embedding = await azure_openai.get_embedding(emb_endpoint, emb_api_key, emb_deploy, message)
         loop = asyncio.get_event_loop()
         docs, metas, dists = await loop.run_in_executor(
             None,
@@ -108,7 +124,7 @@ async def handle_chat(request):
         context_text = "\n\n".join(context_parts) if context_parts else "(Keine passenden Dokumente gefunden.)"
         system_prompt = "Du bist ein hilfreicher Assistent. Antworte knapp auf Deutsch. Nenne Quellen (z.B. [1], [2]). Erfinde nichts."
         user_prompt = f"Kontext:\n\n{context_text}\n\n---\n\nFrage: {message}"
-        answer = await azure_openai.chat_completion(endpoint, api_key, chat_deploy, system_prompt, user_prompt)
+        answer = await azure_openai.chat_completion(chat_endpoint, chat_api_key, chat_deploy, system_prompt, user_prompt)
         return web.json_response({"answer": answer, "sources": sources, "actions": []})
     except Exception as e:
         logger.exception("Chat error: %s", e)
@@ -124,14 +140,12 @@ async def handle_sync_onenote(request):
         refresh_token = get_refresh_token() or (opts.get("microsoft_refresh_token") or "").strip() or None
         if not client_id or not client_secret:
             return web.json_response({"error": "Microsoft Client-ID/Secret fehlt"}, status=400)
-        endpoint = opts.get("azure_endpoint")
-        api_key = opts.get("azure_api_key")
-        emb_deploy = opts.get("azure_embedding_deployment")
-        if not all([endpoint, api_key, emb_deploy]):
+        emb_endpoint, emb_api_key, emb_deploy = _embedding_config(opts)
+        if not all([emb_endpoint, emb_api_key, emb_deploy]):
             return web.json_response({"error": "Azure OpenAI (Embedding) fehlt"}, status=400)
 
         async def get_emb(text):
-            return await azure_openai.get_embedding(endpoint, api_key, emb_deploy, text)
+            return await azure_openai.get_embedding(emb_endpoint, emb_api_key, emb_deploy, text)
 
         loop = asyncio.get_event_loop()
 
@@ -185,9 +199,7 @@ async def handle_add_documents(request):
         if not documents:
             return web.json_response({"ok": True})
         opts = get_opts()
-        endpoint = opts.get("azure_endpoint")
-        api_key = opts.get("azure_api_key")
-        emb_deploy = opts.get("azure_embedding_deployment")
+        emb_endpoint, emb_api_key, emb_deploy = _embedding_config(opts)
         ids, docs, metas, embeddings = [], [], [], []
         for item in documents:
             content = item.get("content") or ""
@@ -197,10 +209,10 @@ async def handle_add_documents(request):
             docs.append(content)
             metas.append(meta)
             embeddings.append(emb)
-        if not all(embeddings) and endpoint and api_key and emb_deploy:
+        if not all(embeddings) and emb_endpoint and emb_api_key and emb_deploy:
             for i, (content, emb) in enumerate(zip(docs, embeddings)):
                 if emb is None:
-                    embeddings[i] = await azure_openai.get_embedding(endpoint, api_key, emb_deploy, content)
+                    embeddings[i] = await azure_openai.get_embedding(emb_endpoint, emb_api_key, emb_deploy, content)
         elif not all(embeddings):
             return web.json_response({"error": "embedding fehlt oder Azure konfigurieren"}, status=400)
         loop = asyncio.get_event_loop()

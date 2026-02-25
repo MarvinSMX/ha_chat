@@ -13,9 +13,16 @@ startup: application
 ports:
   8765/tcp: 8765
 options:
+  # Gemeinsam (Fallback, wenn Embedding/Chat nicht getrennt gesetzt)
   azure_endpoint: ""
   azure_api_key: ""
+  # Embedding (optional getrennt; sonst Fallback auf azure_endpoint / azure_api_key)
+  azure_embedding_endpoint: ""
+  azure_embedding_api_key: ""
   azure_embedding_deployment: "text-embedding-ada-002"
+  # Chat/LLM (optional getrennt; sonst Fallback auf azure_endpoint / azure_api_key)
+  azure_chat_endpoint: ""
+  azure_chat_api_key: ""
   azure_chat_deployment: "gpt-4o"
   microsoft_client_id: ""
   microsoft_client_secret: ""
@@ -25,7 +32,11 @@ options:
 schema:
   azure_endpoint: str
   azure_api_key: str
+  azure_embedding_endpoint: str
+  azure_embedding_api_key: str
   azure_embedding_deployment: str
+  azure_chat_endpoint: str
+  azure_chat_api_key: str
   azure_chat_deployment: str
   microsoft_client_id: str
   microsoft_client_secret: str
