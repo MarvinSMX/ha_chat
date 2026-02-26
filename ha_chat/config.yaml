@@ -12,6 +12,7 @@ arch:
 startup: application
 ports:
   8765/tcp: 8765
+ingress: true
 options:
   # Gemeinsam (Fallback, wenn Embedding/Chat nicht getrennt gesetzt)
   azure_endpoint: ""

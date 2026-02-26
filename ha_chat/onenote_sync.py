@@ -131,8 +131,8 @@ async def check_onenote_access(
 async def fetch_pages(access_token: str, session, notebook_id: Optional[str] = None, notebook_name: Optional[str] = None) -> List[dict]:
     """
     Holt alle relevanten Seiten.
-    Wenn notebook_id oder notebook_name gesetzt: nur aus diesem Notizbuch (über Abschnitte + Section Groups).
-    Sonst: alle Seiten wie bisher über /me/onenote/pages.
+    Mit notebook_id/notebook_name: nur dieses Notizbuch (Abschnitte + Fallback /me/onenote/sections gefiltert).
+    Ohne Notizbuch: alle Abschnitte über /me/onenote/sections, dann Seiten pro Abschnitt (gleiche API wie Fallback).
     """
     headers = {"Authorization": f"Bearer {access_token}"}
 
@@ -231,8 +231,29 @@ async def fetch_pages(access_token: str, session, notebook_id: Optional[str] = N
         logger.info("OneNote: Insgesamt %d Seiten aus dem Notizbuch abgerufen", len(pages))
         return pages
 
-    # Alle Seiten (bisheriges Verhalten)
-    pages = await _fetch_all(GRAPH_PAGES_URL, access_token, session)
+    # Ohne Notizbuch-Auswahl: dieselbe funktionierende API – alle Abschnitte, dann Seiten pro Abschnitt
+    logger.info("OneNote: Kein Notizbuch gewählt – alle Abschnitte über /me/onenote/sections")
+    all_sections = await _fetch_all(
+        "https://graph.microsoft.com/v1.0/me/onenote/sections?$expand=parentNotebook",
+        access_token, session,
+    )
+    logger.info("OneNote: %d Abschnitte gesamt", len(all_sections))
+    pages = []
+    for sec in all_sections:
+        sec_id = sec.get("id")
+        if not sec_id:
+            continue
+        section_pages = await _fetch_all(
+            f"https://graph.microsoft.com/v1.0/me/onenote/sections/{sec_id}/pages",
+            access_token, session,
+        )
+        parent_nb = (sec.get("parentNotebook") or {}).get("displayName") or ""
+        for p in section_pages:
+            if not p.get("parentSection"):
+                p["parentSection"] = {"displayName": sec.get("displayName") or "", "id": sec_id}
+            if not p.get("parentSection", {}).get("parentNotebook") and parent_nb:
+                p.setdefault("parentSection", {})["parentNotebook"] = {"displayName": parent_nb}
+            pages.append(p)
     logger.info("OneNote: Alle Notizbücher – %d Seiten abgerufen", len(pages))
     return pages
 

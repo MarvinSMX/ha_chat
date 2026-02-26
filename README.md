@@ -43,7 +43,8 @@ addons/
 
 ## Schritt 3: Chat nutzen
 
-- **Im Browser:** `http://homeassistant.local:8765` (oder deine HA-Host-Adresse mit Port **8765**) öffnen – dort läuft die Chat-UI der App.
+- **Über Home Assistant:** Add-on-Seite öffnen und auf **„Weboberfläche öffnen“** (bzw. **Open Web UI**) klicken – die Chat-UI läuft dann per **Ingress** über die HA-Oberfläche (kein eigener Port nötig).
+- **Direkt im Browser:** `http://homeassistant.local:8765` (oder deine HA-Host-Adresse mit Port **8765**) – falls du den Port nutzen willst.
 - **Als Panel in HA:** In `configuration.yaml` ein **panel_custom** mit iframe auf die App setzen, z. B.:
   ```yaml
   panel_custom:
@@ -55,6 +56,7 @@ addons/
       config:
         url: http://homeassistant.local:8765
   ```
+  **Hinweis:** Wenn du Ingress nutzt, die Weboberfläche über den Add-on-Button „Weboberfläche öffnen“ öffnen und die dort angezeigte URL (z. B. `https://dein-ha/api/hassio_ingress/…`) als `config.url` verwenden, damit das Panel im gleichen Kontext läuft.
   Dann unter **Einstellungen** → **Dashboards** → **Sidebar** das Panel „Chat“ aktivieren.
 
 ## API (für Automationen / andere Aufrufer)
