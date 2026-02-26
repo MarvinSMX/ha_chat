@@ -18,7 +18,7 @@ async function bootstrap() {
       .then((r) => {
         if (r.error) console.warn('OneNote-Sync beim Start:', r.error);
         else if (r.documents_added !== undefined && r.documents_added > 0)
-          console.log('OneNote-Sync beim Start: %d Dokumente in ChromaDB', r.documents_added);
+          console.log('OneNote-Sync beim Start: %d Dokumente an N8N gesendet', r.documents_added);
       })
       .catch((e) => console.warn('OneNote-Sync beim Start fehlgeschlagen:', e));
   });

@@ -63,20 +63,32 @@
 
   function parseJsonResponse(r) {
     return r.text().then(function (text) {
+      if (!text || typeof text !== 'string') {
+        throw new Error(r.status ? 'HTTP ' + r.status : 'Leere Antwort');
+      }
+      var raw = text.replace(/^\uFEFF/, '').trim();
       var data = null;
       try {
-        data = text ? JSON.parse(text) : null;
+        if (raw.length === 0) {
+          throw new Error('Leere Antwort');
+        }
+        if (raw[0] !== '{' && raw[0] !== '[') {
+          throw new Error(raw.length < 100 ? raw : raw.slice(0, 80) + '…');
+        }
+        data = JSON.parse(raw);
       } catch (e) {
-        var msg = r.status ? 'HTTP ' + r.status : 'Antwort ist kein JSON';
-        if (text && (text.indexOf('<') === 0 || text.indexOf('<!') === 0)) {
+        var msg = r.status ? 'HTTP ' + r.status : 'Antwort ist kein gültiges JSON';
+        if (e instanceof SyntaxError && raw.length < 200) {
+          msg += ': ' + raw;
+        } else if (raw.indexOf('<') === 0 || raw.indexOf('<!') === 0) {
           msg += ' – Fehlerseite (Add-on/Ingress prüfen)';
-        } else if (text && text.length < 200) {
-          msg += ': ' + text;
+        } else if (e.message && e.message !== 'Leere Antwort') {
+          msg += ' – ' + e.message;
         }
         throw new Error(msg);
       }
       if (!r.ok) {
-        var err = (data && data.error) || (r.status ? 'HTTP ' + r.status : 'Fehler');
+        var err = (data && data.error) || (data && data.message) || (r.status ? 'HTTP ' + r.status : 'Fehler');
         throw new Error(err);
       }
       return data;

@@ -1,10 +1,10 @@
 import { Controller, Post, Body } from '@nestjs/common';
-import { RagService } from './rag.service';
-import { getOptions, getEmbeddingConfig, getChatConfig } from '../config/options';
+import { N8nService } from './n8n.service';
+import { getOptions } from '../config/options';
 
 @Controller('api')
 export class ChatController {
-  constructor(private readonly rag: RagService) {}
+  constructor(private readonly n8n: N8nService) {}
 
   @Post('chat')
   async chat(@Body() body: { message?: string }) {
@@ -12,17 +12,12 @@ export class ChatController {
     if (!message) {
       return { error: 'message fehlt' };
     }
-    const opts = getOptions();
-    const emb = getEmbeddingConfig(opts);
-    const chat = getChatConfig(opts);
-    if (!emb.endpoint || !emb.apiKey || !emb.deployment) {
-      return { error: 'Azure OpenAI (Embedding) nicht konfiguriert' };
-    }
-    if (!chat.endpoint || !chat.apiKey || !chat.deployment) {
-      return { error: 'Azure OpenAI (Chat/LLM) nicht konfiguriert' };
+    const inferenceUrl = (getOptions().n8n_inference_webhook_url ?? '').trim();
+    if (!inferenceUrl) {
+      return { error: 'N8N Inference-Webhook-URL fehlt (Add-on konfigurieren)' };
     }
     try {
-      const result = await this.rag.runRag(message);
+      const result = await this.n8n.inference(message);
       return result;
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e);

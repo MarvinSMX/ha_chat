@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { getOptions } from '../config/options';
 import { getAccessToken, getAccessTokenSilent } from './msal-auth.service';
-import { RagService } from '../chat/rag.service';
+import { N8nService } from '../chat/n8n.service';
 import { chunkText } from '../util/chunk';
 import { htmlToText } from '../util/html-to-text';
 
@@ -11,7 +11,7 @@ const DATA_DIR = process.env.DATA_DIR || '/data';
 const ONENOTE_SELECTION_PATH = join(DATA_DIR, 'onenote_selection.json');
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 /** Max. Chunks pro Batch – reduziert Speicherverbrauch (vermeidet Heap OOM bei großen Notizbüchern) */
-const SYNC_BATCH_SIZE = 30;
+const SYNC_BATCH_SIZE = 15;
 
 async function graphFetch<T>(url: string, accessToken: string, key: string = 'value'): Promise<T[]> {
   const out: T[] = [];
@@ -61,7 +61,7 @@ interface GraphPage {
 
 @Injectable()
 export class OnenoteService {
-  constructor(private readonly rag: RagService) {}
+  constructor(private readonly n8n: N8nService) {}
 
   private loadSelection(): { notebook_id: string; notebook_name: string } {
     if (!existsSync(ONENOTE_SELECTION_PATH)) {
@@ -270,14 +270,17 @@ export class OnenoteService {
   }
 
   /**
-   * Sync section-weise: pro Abschnitt Seiten holen, verarbeiten, in Chroma schreiben.
-   * Hält nie alle Seiten im Speicher – reduziert Heap-OOM bei großen Notizbüchern.
+   * Sync section-weise: Graph-API holt Seiten, Chunks werden an N8N Ingest-Webhook gesendet (Embedding + Speicher in N8N).
    */
   async runSync(): Promise<{ documents_added?: number; error?: string }> {
     const opts = getOptions();
     const clientId = (opts.microsoft_client_id ?? '').trim();
     if (!clientId) {
       return { documents_added: 0, error: 'Microsoft Client-ID fehlt' };
+    }
+    const ingestUrl = (opts.n8n_ingest_webhook_url ?? '').trim();
+    if (!ingestUrl) {
+      return { documents_added: 0, error: 'N8N Ingest-Webhook-URL fehlt (Add-on konfigurieren)' };
     }
 
     const accessToken = await getAccessToken();
@@ -353,11 +356,11 @@ export class OnenoteService {
 
       const flushBatch = async () => {
         if (batchDocs.length === 0) return;
-        const embeddings: number[][] = [];
-        for (const doc of batchDocs) {
-          embeddings.push(await this.rag.getEmbedding(doc));
-        }
-        await this.rag.addToChroma(batchIds, batchDocs, batchMetas, embeddings);
+        const documents = batchDocs.map((content, i) => ({
+          content,
+          metadata: batchMetas[i] ?? {},
+        }));
+        await this.n8n.sendToIngest(documents);
         totalAdded += batchDocs.length;
         batchIds = [];
         batchDocs = [];

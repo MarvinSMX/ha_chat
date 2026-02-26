@@ -1,5 +1,5 @@
 name: "HA Chat (OneNote RAG)"
-description: "Sidebar-Chat mit RAG über OneNote, ChromaDB und Azure OpenAI. Keine Integration nötig."
+description: "Frontend + OneNote (Graph). RAG/Embedding/Inference in N8N (2 Webhooks)."
 version: "1.0.28"
 slug: "ha_chat"
 init: false
@@ -14,38 +14,16 @@ ports:
   8765/tcp: 8099
 ingress: true
 options:
-  # Gemeinsam (Fallback, wenn Embedding/Chat nicht getrennt gesetzt)
-  azure_endpoint: ""
-  azure_api_key: ""
-  # Embedding (optional getrennt; sonst Fallback auf azure_endpoint / azure_api_key)
-  azure_embedding_endpoint: ""
-  azure_embedding_api_key: ""
-  azure_embedding_deployment: "text-embedding-ada-002"
-  # Chat/LLM (optional getrennt; sonst Fallback auf azure_endpoint / azure_api_key)
-  azure_chat_endpoint: ""
-  azure_chat_api_key: ""
-  azure_chat_deployment: "gpt-4o"
   microsoft_client_id: ""
   microsoft_client_secret: ""
   microsoft_tenant_id: "common"
-  # Nur dieses Notizbuch synchronisieren (optional; leer = alle Notizbücher)
   onenote_notebook_id: ""
   onenote_notebook_name: ""
   ha_url: ""
   ha_token: ""
-  # RAG: Top-k (Anzahl Chunks), Temperature (0–1), Score-Schwelle (0–1, 0=aus)
-  rag_top_k: "8"
-  rag_temperature: "0.5"
-  rag_score_threshold: "0"
+  n8n_ingest_webhook_url: ""
+  n8n_inference_webhook_url: ""
 schema:
-  azure_endpoint: str
-  azure_api_key: str
-  azure_embedding_endpoint: str
-  azure_embedding_api_key: str
-  azure_embedding_deployment: str
-  azure_chat_endpoint: str
-  azure_chat_api_key: str
-  azure_chat_deployment: str
   microsoft_client_id: str
   microsoft_client_secret: str
   microsoft_tenant_id: str
@@ -53,6 +31,5 @@ schema:
   onenote_notebook_name: str
   ha_url: str
   ha_token: str
-  rag_top_k: str
-  rag_temperature: str
-  rag_score_threshold: str
+  n8n_ingest_webhook_url: str
+  n8n_inference_webhook_url: str

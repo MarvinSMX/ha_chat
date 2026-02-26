@@ -1,0 +1,10 @@
+# Legacy static UI – wird im Image nicht verwendet; Nest liefert das Vite-Frontend aus frontend/dist
+www
+
+# Dev / nicht für Produktions-Image
+.git
+.github
+*.md
+node_modules
+.env*
+*.log

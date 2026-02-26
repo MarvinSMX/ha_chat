@@ -17,7 +17,19 @@ async function loadNotebooks() {
   showList.value = false;
   try {
     const r = await fetch(apiBase() + '/api/onenote_status');
-    const data = await r.json();
+    const text = await r.text();
+    const raw = (text || '').replace(/^\uFEFF/, '').trim();
+    if (!raw || (raw[0] !== '{' && raw[0] !== '[')) {
+      msg.value = r.ok ? 'Fehler: Ungültige Antwort' : `Fehler: HTTP ${r.status}` + (raw.length < 100 ? ' – ' + raw : '');
+      return;
+    }
+    let data: { success?: boolean; message?: string; notebooks?: Array<{ id?: string; displayName?: string }>; configured_notebook_name?: string };
+    try {
+      data = JSON.parse(raw) as typeof data;
+    } catch {
+      msg.value = 'Fehler: Antwort ist kein gültiges JSON';
+      return;
+    }
     msg.value = data.success ? (data.message || '') : (data.message || 'Fehler');
     if (data.notebooks?.length) {
       notebooks.value = data.notebooks;

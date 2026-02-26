@@ -26,13 +26,3 @@ export function chunkText(
   }
   return out;
 }
-
-export function makeDocId(metadata: Record<string, unknown>): string {
-  const pageId = metadata.pageId ?? metadata.page_id;
-  const chunkIdx = metadata.chunkIndex ?? metadata.chunk_index;
-  if (pageId != null && chunkIdx != null) {
-    return `${pageId}_${chunkIdx}`;
-  }
-  const crypto = require('crypto');
-  return crypto.createHash('sha256').update(String(metadata.content ?? '')).digest('hex').slice(0, 32);
-}

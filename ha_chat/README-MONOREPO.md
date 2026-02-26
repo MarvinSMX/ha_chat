@@ -1,10 +1,10 @@
 # HA Chat – Monorepo (Vue + NestJS)
 
-Unter `addon/ha_chat/ha_chat/` liegt ein Monorepo:
+Unter `addon/ha_chat/ha_chat/`:
 
 - **frontend/** – Vue 3 + Vite (Chat-UI, OneNote-Karte)
-- **backend/** – NestJS (RAG, ChromaDB-Anbindung, OneNote-API, Chunking)
-- **Dockerfile** – baut Frontend + Backend, startet Chroma (Python) + NestJS im Container
+- **backend/** – NestJS (statisches Frontend, OneNote/Graph, N8N-Webhook-Client)
+- **Dockerfile** – baut Frontend + Backend, startet nur Node (kein Chroma/Python)
 
 ## Struktur
 
@@ -25,13 +25,14 @@ ha_chat/
 │   │   ├── main.ts
 │   │   ├── app.module.ts
 │   │   ├── config/options.ts
-│   │   ├── chat/       # RAG, Chroma HTTP, Azure OpenAI
-│   │   └── onenote/    # Status, Notizbuch speichern, Sync (Stub)
+│   │   ├── chat/       # N8nService (Ingest + Inference), ChatController
+│   │   ├── onenote/    # MSAL, Graph, Sync → N8N Ingest
+│   │   └── util/
 │   ├── package.json
 │   └── tsconfig.json
-├── Dockerfile         # Multi-Stage: frontend build → backend build → Chroma + Node
-├── run-nestjs.sh      # Startet Chroma (Port 8000), dann NestJS (Port 8099)
-└── config.yaml        # HA Add-on Konfiguration (unverändert)
+├── Dockerfile         # Multi-Stage: frontend build → backend build → nur Node
+├── run.sh             # Startet NestJS (Port 8099)
+└── config.yaml        # HA Add-on (Microsoft, OneNote, N8N-URLs)
 ```
 
 ## Build (lokal)
@@ -51,12 +52,6 @@ docker build -t ha-chat .
 
 ## Laufzeit
 
-- **Chroma** läuft im Container auf Port 8000 (Persistenz: `/data/chromadb`).
-- **NestJS** liest Optionen aus `/data/options.json`, dient die Vue-App und die API unter `/api/*`.
-- **Port** für Ingress: 8099 (oder `SUPERVISOR_INGRESS_PORT`).
-
-## Offene Punkte
-
-- **OneNote-Sync** im Backend ist noch Stub (MSAL + Microsoft Graph in Node anbinden, gleiche Logik wie in Python).
-- **Chroma HTTP-API**: `chroma.service.ts` nutzt fetch gegen `CHROMA_URL`; ggf. Pfade an die tatsächliche Chroma-API anpassen.
-- **execute_action / add_documents**: bei Bedarf in NestJS ergänzen (wie in der Python-Version).
+- **NestJS** liest Optionen aus `/data/options.json`, dient die Vue-App und `/api/*`.
+- **Port:** 8099 (bzw. `SUPERVISOR_INGRESS_PORT`).
+- **RAG/Embedding/Inference** laufen in N8N (Ingest- und Inference-Webhook).
