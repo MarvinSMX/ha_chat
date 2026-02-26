@@ -131,7 +131,7 @@ async def check_onenote_access(
 async def fetch_pages(access_token: str, session, notebook_id: Optional[str] = None, notebook_name: Optional[str] = None) -> List[dict]:
     """
     Holt alle relevanten Seiten.
-    Wenn notebook_id oder notebook_name gesetzt: nur aus diesem Notizbuch (über Abschnitte).
+    Wenn notebook_id oder notebook_name gesetzt: nur aus diesem Notizbuch (über Abschnitte + Section Groups).
     Sonst: alle Seiten wie bisher über /me/onenote/pages.
     """
     headers = {"Authorization": f"Bearer {access_token}"}
@@ -163,18 +163,54 @@ async def fetch_pages(access_token: str, session, notebook_id: Optional[str] = N
                 logger.warning("OneNote: Kein Notizbuch mit Name passend zu '%s' gefunden", notebook_name.strip())
                 return []
             logger.info("OneNote: Notizbuch per Name gewählt: %s (%s)", target_name, target_id)
-        # Abschnitte des Notizbuchs
-        sections_url = f"https://graph.microsoft.com/v1.0/me/onenote/notebooks/{target_id}/sections"
-        sections = await _fetch_all(sections_url, access_token, session)
-        logger.info("OneNote: %d Abschnitte im Notizbuch: %s", len(sections), [s.get("displayName") for s in sections])
+
+        # Alle Abschnitte sammeln: direkt im Notizbuch + in Section Groups (rekursiv)
+        all_sections: List[dict] = []
+
+        async def collect_sections_from_section_group(sg_id: str, sg_display_name: str) -> None:
+            secs = await _fetch_all(
+                f"https://graph.microsoft.com/v1.0/me/onenote/sectionGroups/{sg_id}/sections",
+                access_token, session,
+            )
+            for s in secs:
+                s["_sectionGroupName"] = sg_display_name
+                all_sections.append(s)
+            # Rekursiv: verschachtelte Section Groups
+            child_groups = await _fetch_all(
+                f"https://graph.microsoft.com/v1.0/me/onenote/sectionGroups/{sg_id}/sectionGroups",
+                access_token, session,
+            )
+            for sg in child_groups:
+                await collect_sections_from_section_group(sg.get("id") or "", sg.get("displayName") or "")
+
+        # 1) Direkte Abschnitte des Notizbuchs
+        direct_sections = await _fetch_all(
+            f"https://graph.microsoft.com/v1.0/me/onenote/notebooks/{target_id}/sections",
+            access_token, session,
+        )
+        for s in direct_sections:
+            s["_sectionGroupName"] = ""
+            all_sections.append(s)
+        logger.info("OneNote: %d direkte Abschnitte im Notizbuch", len(direct_sections))
+
+        # 2) Section Groups des Notizbuchs (darin liegen oft die eigentlichen Abschnitte)
+        section_groups = await _fetch_all(
+            f"https://graph.microsoft.com/v1.0/me/onenote/notebooks/{target_id}/sectionGroups",
+            access_token, session,
+        )
+        logger.info("OneNote: %d Section Groups im Notizbuch: %s", len(section_groups), [sg.get("displayName") for sg in section_groups])
+        for sg in section_groups:
+            await collect_sections_from_section_group(sg.get("id") or "", sg.get("displayName") or "")
+
+        logger.info("OneNote: Insgesamt %d Abschnitte (direkt + in Section Groups)", len(all_sections))
+
         pages = []
-        for sec in sections:
+        for sec in all_sections:
             sec_id = sec.get("id")
             if not sec_id:
                 continue
             section_pages_url = f"https://graph.microsoft.com/v1.0/me/onenote/sections/{sec_id}/pages"
             section_pages = await _fetch_all(section_pages_url, access_token, session)
-            # parentSection/parentNotebook für Metadaten ergänzen, falls nicht im Antwortformat
             for p in section_pages:
                 if not p.get("parentSection"):
                     p["parentSection"] = {"displayName": sec.get("displayName") or "", "id": sec_id}
