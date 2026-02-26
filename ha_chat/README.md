@@ -1,13 +1,11 @@
 # HA Chat (OneNote RAG)
 
-Sidebar-Chat mit RAG über OneNote, ChromaDB und Azure OpenAI. Läuft als eigenständige App – keine Custom Integration nötig.
+Eigenständiges Add-on: RAG-Chat über OneNote (ChromaDB, LangChain, Azure OpenAI) inkl. Weboberfläche. **Nur dieses Add-on wird gepflegt.**
 
-## Installation über Add-on-Repository
+## Installation
 
-1. In Home Assistant: **Einstellungen** → **Apps** → **App-Store** → Drei-Punkte-Menü → **Repository hinzufügen**.
-2. URL eintragen: `https://github.com/MarvinSMX/ha_chat`
-3. **Nach Updates suchen** – unter **Lokale Apps** erscheint **HA Chat (OneNote RAG)**.
-4. App **installieren**, **starten** und **konfigurieren** (Azure Endpoint, API-Key, Embedding-/Chat-Deployment; optional Microsoft und HA URL/Token).
-5. Chat-UI im Browser: `http://homeassistant.local:8765`
+Den **Inhalt** von `addon/ha_chat/ha_chat/` ins Add-on-Verzeichnis kopieren (z. B. `addons/ha_chat/`). Dann in Home Assistant: **Einstellungen** → **Apps** → **Nach Updates suchen** → **HA Chat (OneNote RAG)** installieren und starten.
 
-Ausführliche Anleitung siehe README im Repository-Root.
+Chat-UI: **`http://<dein-ha>:8765`**
+
+Ausführliche Anleitung: [README im Add-on-Ordner](../README.md).

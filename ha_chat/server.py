@@ -287,8 +287,48 @@ async def handle_add_documents(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def _run_startup_sync(app):
+    """Startet beim App-Start einmal den OneNote-Sync im Hintergrund (inkl. Device Flow falls nötig)."""
+    opts = get_opts()
+    client_id = (opts.get("microsoft_client_id") or "").strip()
+    client_secret = (opts.get("microsoft_client_secret") or "").strip()
+    if not client_id or not client_secret:
+        logger.info("OneNote-Sync beim Start übersprungen: Microsoft Client-ID/Secret nicht gesetzt.")
+        return
+    emb_endpoint, emb_api_key, emb_deploy = _embedding_config(opts)
+    if not all([emb_endpoint, emb_api_key, emb_deploy]):
+        logger.info("OneNote-Sync beim Start übersprungen: Azure OpenAI (Embedding) nicht konfiguriert.")
+        return
+    tenant = (opts.get("microsoft_tenant_id") or "common").strip()
+    refresh_token = get_refresh_token() or (opts.get("microsoft_refresh_token") or "").strip() or None
+    notebook_id, notebook_name = load_onenote_selection()
+    if notebook_id is None and notebook_name is None:
+        notebook_id = (opts.get("onenote_notebook_id") or "").strip() or None
+        notebook_name = (opts.get("onenote_notebook_name") or "").strip() or None
+
+    async def get_emb(text):
+        return await azure_openai.get_embedding(emb_endpoint, emb_api_key, emb_deploy, text)
+
+    loop = asyncio.get_event_loop()
+    async def add_fn(ids, docs, metas, embs):
+        await loop.run_in_executor(None, lambda: chromadb_add(CHROMADB_PATH, COLLECTION_NAME, ids, docs, metas, embs))
+
+    try:
+        async with ClientSession() as session:
+            count, new_refresh = await onenote_sync.run_sync(
+                tenant, client_id, client_secret, refresh_token, get_emb, add_fn, session,
+                notebook_id=notebook_id, notebook_name=notebook_name,
+            )
+        if new_refresh and new_refresh != refresh_token:
+            set_refresh_token(new_refresh)
+        logger.info("OneNote-Sync beim Start abgeschlossen: %d Dokumente in ChromaDB", count)
+    except Exception as e:
+        logger.exception("OneNote-Sync beim Start fehlgeschlagen: %s", e)
+
+
 def create_app():
     app = web.Application(middlewares=[cors_middleware])
+    app.on_startup.append(_run_startup_sync)
     app.router.add_route("OPTIONS", "/api/chat", handle_options)
     app.router.add_route("OPTIONS", "/api/sync_onenote", handle_options)
     app.router.add_route("OPTIONS", "/api/execute_action", handle_options)

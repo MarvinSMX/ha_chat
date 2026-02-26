@@ -3,6 +3,7 @@ import re
 import asyncio
 import json
 import logging
+import urllib.parse
 from typing import Callable, Awaitable, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -61,37 +62,55 @@ def chunk_text(text: str, chunk_size: int = 3600, overlap: int = 480) -> List[Tu
 async def get_token_via_device_flow(
     tenant: str, client_id: str, client_secret: str, session
 ) -> Optional[Tuple[str, str]]:
+    if not (client_id and client_secret):
+        logger.warning("OneNote Device Flow: client_id und client_secret müssen gesetzt sein (App-Optionen)")
+        return None
     base = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0"
     async with session.post(f"{base}/devicecode", data={"client_id": client_id, "scope": GRAPH_SCOPES}) as resp:
         if resp.status != 200:
             return None
         data = await resp.json()
     device_code = data.get("device_code")
-    verification_uri = data.get("verification_uri")
+    verification_uri = data.get("verification_uri") or "https://login.microsoft.com/device"
     user_code = data.get("user_code")
-    print(f"OneNote Anmeldung: Öffne {verification_uri} und gib ein: {user_code}")
+    message = data.get("message", "")
+    print("\n" + "=" * 60)
+    print("  HA Chat – OneNote-Anmeldung (Device Flow)")
+    print("=" * 60)
+    print("  Öffne im Browser:  " + verification_uri)
+    print("  Gib folgenden Code ein:  " + str(user_code))
+    print("  (Gültig ca. 15 Min. – Warte auf deine Anmeldung …)")
+    print("=" * 60 + "\n")
     logger.info("OneNote Device Flow: Öffne %s und gib ein: %s (Warte bis zu 5 Min. auf Anmeldung)", verification_uri, user_code)
     token_url = f"{base}/token"
+    body = urllib.parse.urlencode({
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        "device_code": device_code,
+    })
     for i in range(60):
         await asyncio.sleep(5)
-        async with session.post(token_url, data={
-            "client_id": client_id, "client_secret": client_secret,
-            "grant_type": "urn:ietf:params:oauth:grant-type:device_code", "device_code": device_code,
-        }) as tok_resp:
-            body = await tok_resp.text()
+        async with session.post(
+            token_url,
+            data=body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        ) as tok_resp:
+            resp_body = await tok_resp.text()
             status = tok_resp.status
         try:
-            tok_data = json.loads(body) if body else {}
+            tok_data = json.loads(resp_body) if resp_body else {}
         except Exception:
             tok_data = {}
         if status == 200 and "access_token" in tok_data:
+            print("  OneNote-Anmeldung erfolgreich.\n")
             logger.info("OneNote Device Flow: Anmeldung erfolgreich")
             return (tok_data["access_token"], tok_data.get("refresh_token", ""))
         err = tok_data.get("error")
         if err == "authorization_pending":
             continue
         if status != 200:
-            logger.warning("OneNote Device Flow: Token-Antwort %s: %s", status, body[:300])
+            logger.warning("OneNote Device Flow: Token-Antwort %s: %s", status, resp_body[:300])
         logger.warning(
             "OneNote Device Flow beendet: error=%s description=%s",
             err,
@@ -105,10 +124,14 @@ async def refresh_access_token(
     tenant: str, client_id: str, client_secret: str, refresh_token: str, session
 ) -> Optional[str]:
     url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
-    async with session.post(url, data={
-        "client_id": client_id, "client_secret": client_secret,
-        "grant_type": "refresh_token", "refresh_token": refresh_token, "scope": GRAPH_SCOPES,
-    }) as resp:
+    body = urllib.parse.urlencode({
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "scope": GRAPH_SCOPES,
+    })
+    async with session.post(url, data=body, headers={"Content-Type": "application/x-www-form-urlencoded"}) as resp:
         if resp.status != 200:
             return None
         data = await resp.json()
