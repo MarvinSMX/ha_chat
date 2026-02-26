@@ -11,7 +11,7 @@ arch:
   - i386
 startup: application
 ports:
-  8765/tcp: 8765
+  8765/tcp: 8099
 ingress: true
 options:
   # Gemeinsam (Fallback, wenn Embedding/Chat nicht getrennt gesetzt)

@@ -373,7 +373,9 @@ def create_app():
 def main():
     load_options()
     app = create_app()
-    web.run_app(app, host="0.0.0.0", port=8765)
+    # Ingress erwartet Port 8099; direkter Zugriff über config ports (z. B. 8765 -> 8099)
+    port = int(os.environ.get("SUPERVISOR_INGRESS_PORT", "8099"))
+    web.run_app(app, host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":
