@@ -8,22 +8,29 @@
     <style>
       :host { display: block; height: 100%; box-sizing: border-box; }
       .container { height: 100%; display: flex; flex-direction: column; padding: 16px; box-sizing: border-box; background: #1c1c1c; color: #e0e0e0; }
-      .thread { flex: 1; overflow-y: auto; margin-bottom: 16px; }
-      .msg { margin: 8px 0; padding: 10px 12px; border-radius: 8px; max-width: 85%; }
-      .msg.user { background: #0d47a1; color: #fff; margin-left: auto; }
-      .msg.assistant { background: #2d2d2d; border: 1px solid #444; }
+      .thread { flex: 1; overflow-y: auto; margin-bottom: 20px; min-height: 0; }
+      .msg { margin: 10px 0; padding: 12px 16px; border-radius: 18px; max-width: 85%; line-height: 1.5; }
+      .msg.user { background: #009AC7; color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
+      .msg.assistant { background: #2d2d2d; border: 1px solid #3a3a3a; border-bottom-left-radius: 4px; }
       .msg .content { white-space: pre-wrap; word-break: break-word; }
-      .sources { margin-top: 8px; font-size: 0.9em; }
-      .sources a { color: #82b1ff; margin-right: 12px; }
-      .actions { margin-top: 8px; }
-      .actions button { margin-right: 8px; margin-top: 4px; padding: 6px 12px; cursor: pointer; background: #333; color: #fff; border: 1px solid #555; border-radius: 4px; }
-      .input-row { display: flex; gap: 8px; align-items: flex-end; }
-      .input-row input { flex: 1; padding: 10px 12px; background: #2d2d2d; border: 1px solid #444; color: #e0e0e0; border-radius: 4px; }
-      .input-row button { padding: 10px 20px; cursor: pointer; background: #0d47a1; color: #fff; border: none; border-radius: 4px; }
-      .error { color: #ff8a80; margin: 8px 0; }
-      .input-row button:disabled { opacity: 0.6; cursor: not-allowed; }
+      .sources { margin-top: 10px; font-size: 0.85em; opacity: 0.9; }
+      .sources a { color: #009AC7; margin-right: 12px; text-decoration: none; }
+      .sources a:hover { text-decoration: underline; }
+      .actions { margin-top: 10px; }
+      .actions button { margin-right: 8px; margin-top: 6px; padding: 8px 14px; cursor: pointer; background: transparent; color: #009AC7; border: 1px solid #009AC7; border-radius: 20px; font-size: 0.9em; }
+      .actions button:hover { background: rgba(0, 154, 199, 0.15); }
+      .input-wrapper { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 20px; background: #2d2d2d; border: 1px solid #3a3a3a; border-radius: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.2); }
+      .input-wrapper:focus-within { border-color: #009AC7; box-shadow: 0 0 0 1px #009AC7; }
+      .input-row input { flex: 1; min-width: 0; padding: 12px 4px 12px 0; background: transparent; border: none; color: #e0e0e0; font-size: 1rem; outline: none; }
+      .input-row input::placeholder { color: #888; }
+      .send-btn { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; cursor: pointer; background: #009AC7; color: #fff; border: none; border-radius: 50%; flex-shrink: 0; transition: background 0.2s, transform 0.1s; }
+      .send-btn:hover:not(:disabled) { background: #007da3; }
+      .send-btn:active:not(:disabled) { transform: scale(0.96); }
+      .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+      .send-btn svg { width: 20px; height: 20px; }
+      .error { color: #ff8a80; margin: 10px 0 0 0; font-size: 0.9em; }
       .typing-indicator { display: inline-flex; gap: 4px; padding: 2px 0; }
-      .typing-indicator span { width: 6px; height: 6px; border-radius: 50%; background: #82b1ff; animation: typing 0.6s ease-in-out infinite both; }
+      .typing-indicator span { width: 6px; height: 6px; border-radius: 50%; background: #009AC7; animation: typing 0.6s ease-in-out infinite both; }
       .typing-indicator span:nth-child(2) { animation-delay: 0.1s; }
       .typing-indicator span:nth-child(3) { animation-delay: 0.2s; }
       @keyframes typing { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; } 40% { transform: scale(1); opacity: 1; } }
@@ -31,8 +38,12 @@
     <div class="container">
       <div class="thread" id="thread"></div>
       <div class="input-row">
-        <input type="text" id="input" placeholder="Frage stellen..." />
-        <button id="send">Senden</button>
+        <div class="input-wrapper">
+          <input type="text" id="input" placeholder="Nachricht eingeben..." autocomplete="off" />
+          <button type="button" class="send-btn" id="send" title="Senden" aria-label="Senden">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </div>
       </div>
       <div id="error" class="error" style="display:none;"></div>
     </div>
