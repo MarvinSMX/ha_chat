@@ -1,0 +1,18 @@
+{
+  "name": "ha-chat-monorepo",
+  "private": true,
+  "scripts": {
+    "build": "pnpm run build:api && pnpm run build:web",
+    "build:api": "pnpm --filter api build",
+    "build:web": "pnpm --filter web build",
+    "dev:api": "pnpm --filter api start:dev",
+    "dev:web": "pnpm --filter web dev"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.14.2",
+  "workspaces": [
+    "apps/*"
+  ]
+}

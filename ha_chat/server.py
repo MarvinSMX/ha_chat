@@ -115,6 +115,7 @@ async def handle_options(request):
 
 async def handle_chat(request):
     try:
+        logger.info("Chat-Anfrage erhalten")
         body = await request.json()
         message = (body.get("message") or "").strip()
         if not message:
@@ -138,6 +139,7 @@ async def handle_chat(request):
                 k=8,
             ),
         )
+        logger.info("Chat-Anfrage beantwortet")
         return web.json_response({"answer": answer, "sources": sources, "actions": []})
     except Exception as e:
         logger.exception("Chat error: %s", e)

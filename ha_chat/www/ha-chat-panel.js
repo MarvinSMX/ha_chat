@@ -21,7 +21,12 @@
       .input-row input { flex: 1; padding: 10px 12px; background: #2d2d2d; border: 1px solid #444; color: #e0e0e0; border-radius: 4px; }
       .input-row button { padding: 10px 20px; cursor: pointer; background: #0d47a1; color: #fff; border: none; border-radius: 4px; }
       .error { color: #ff8a80; margin: 8px 0; }
-      .loading { opacity: 0.7; pointer-events: none; }
+      .input-row button:disabled { opacity: 0.6; cursor: not-allowed; }
+      .typing-indicator { display: inline-flex; gap: 4px; padding: 2px 0; }
+      .typing-indicator span { width: 6px; height: 6px; border-radius: 50%; background: #82b1ff; animation: typing 0.6s ease-in-out infinite both; }
+      .typing-indicator span:nth-child(2) { animation-delay: 0.1s; }
+      .typing-indicator span:nth-child(3) { animation-delay: 0.2s; }
+      @keyframes typing { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; } 40% { transform: scale(1); opacity: 1; } }
       .onenote-card { background: #2d2d2d; border: 1px solid #444; border-radius: 8px; padding: 12px; margin-bottom: 12px; flex-shrink: 0; }
       .onenote-card h3 { margin: 0 0 8px 0; font-size: 1em; }
       .onenote-card button { padding: 6px 12px; margin-right: 8px; margin-bottom: 4px; cursor: pointer; background: #0d47a1; color: #fff; border: none; border-radius: 4px; }
@@ -97,8 +102,21 @@
 
     _addMessage(role, content, extra) {
       extra = extra || {};
-      this._thread.push({ role: role, content: content, sources: extra.sources, actions: extra.actions });
+      this._thread.push({ role: role, content: content, sources: extra.sources, actions: extra.actions, pending: !!extra.pending });
       this._render();
+    }
+
+    _setLastAssistantMessage(content, sources, actions) {
+      for (var i = this._thread.length - 1; i >= 0; i--) {
+        if (this._thread[i].role === 'assistant') {
+          this._thread[i].content = content;
+          this._thread[i].sources = sources || [];
+          this._thread[i].actions = actions || [];
+          this._thread[i].pending = false;
+          this._render();
+          return;
+        }
+      }
     }
 
     _render() {
@@ -109,29 +127,37 @@
       this._thread.forEach(function (m) {
         var div = document.createElement('div');
         div.className = 'msg ' + m.role;
-        var html = '<div class="content">' + escapeHtml(m.content) + '</div>';
-        if (m.sources && m.sources.length) {
-          html += '<div class="sources">Quellen: ';
-          m.sources.forEach(function (s) {
-            html += s.url ? '<a target="_blank" rel="noopener" href="' + escapeHtml(s.url) + '">' + escapeHtml(s.title || 'Link') + '</a>' : escapeHtml(s.title);
-          });
-          html += '</div>';
-        }
-        if (m.actions && m.actions.length) {
-          html += '<div class="actions">';
-          m.actions.forEach(function (a, i) {
-            var label = a.label || a.utterance || ('Aktion ' + (i + 1));
-            html += '<button type="button" data-utterance="' + escapeHtml((a.utterance || '')) + '">' + escapeHtml(label) + '</button>';
-          });
-          html += '</div>';
+        var html = '';
+        if (m.pending) {
+          html = '<div class="content typing"><span class="typing-indicator"><span></span><span></span><span></span></span></div>';
+        } else {
+          html = '<div class="content">' + escapeHtml(m.content) + '</div>';
+          if (m.sources && m.sources.length) {
+            html += '<div class="sources">Quellen: ';
+            m.sources.forEach(function (s) {
+              html += s.url ? '<a target="_blank" rel="noopener" href="' + escapeHtml(s.url) + '">' + escapeHtml(s.title || 'Link') + '</a>' : escapeHtml(s.title);
+            });
+            html += '</div>';
+          }
+          if (m.actions && m.actions.length) {
+            html += '<div class="actions">';
+            m.actions.forEach(function (a, i) {
+              var label = a.label || a.utterance || ('Aktion ' + (i + 1));
+              html += '<button type="button" data-utterance="' + escapeHtml((a.utterance || '')) + '">' + escapeHtml(label) + '</button>';
+            });
+            html += '</div>';
+          }
         }
         div.innerHTML = html;
-        div.querySelectorAll('.actions button').forEach(function (btn) {
-          btn.addEventListener('click', function () { self._runAction(btn.dataset.utterance); });
-        });
+        if (!m.pending && m.actions && m.actions.length) {
+          div.querySelectorAll('.actions button').forEach(function (btn) {
+            btn.addEventListener('click', function () { self._runAction(btn.dataset.utterance); });
+          });
+        }
         threadEl.appendChild(div);
       });
       errEl.style.display = 'none';
+      threadEl.scrollTop = threadEl.scrollHeight;
     }
 
     _showError(msg) {
@@ -209,46 +235,53 @@
 
     _send() {
       var input = this.shadowRoot.getElementById('input');
+      var sendBtn = this.shadowRoot.getElementById('send');
       var text = (input.value || '').trim();
       if (!text) return;
       input.value = '';
       this._addMessage('user', text);
-      var container = this.shadowRoot.querySelector('.container');
-      container.classList.add('loading');
+      this._addMessage('assistant', '', { pending: true });
+      sendBtn.disabled = true;
       this._showError('');
 
       var self = this;
+      var timeoutMs = 120000;
+      var controller = new AbortController();
+      var timeoutId = setTimeout(function () { controller.abort(); }, timeoutMs);
       fetch(apiBase() + '/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text })
+        body: JSON.stringify({ message: text }),
+        signal: controller.signal
       })
-        .then(function (r) { return parseJsonResponse(r); })
+        .then(function (r) { clearTimeout(timeoutId); return parseJsonResponse(r); })
         .then(function (data) {
           if (data.error) {
             self._showError(data.error);
-            self._addMessage('assistant', 'Fehler: ' + data.error);
+            self._setLastAssistantMessage('Fehler: ' + data.error);
           } else {
-            self._addMessage('assistant', data.answer || '', {
-              sources: data.sources || [],
-              actions: data.actions || []
-            });
+            self._setLastAssistantMessage(data.answer || '', data.sources || [], data.actions || []);
           }
         })
         .catch(function (e) {
+          clearTimeout(timeoutId);
           self._showError('Fehler: ' + (e.message || String(e)));
-          self._addMessage('assistant', 'Verbindung zur App fehlgeschlagen. Add-on-Log prüfen oder Seite neu laden.');
+          var msg = e.name === 'AbortError'
+            ? 'Zeitüberschreitung (RAG kann 1–2 Min. dauern). Bitte erneut versuchen.'
+            : 'Verbindung zur App fehlgeschlagen. Add-on-Log prüfen oder Seite neu laden.';
+          self._setLastAssistantMessage(msg);
         })
         .finally(function () {
-          container.classList.remove('loading');
+          sendBtn.disabled = false;
         });
     }
 
     _runAction(utterance) {
       if (!utterance) return;
       this._addMessage('user', '[Aktion] ' + utterance);
-      var container = this.shadowRoot.querySelector('.container');
-      container.classList.add('loading');
+      this._addMessage('assistant', '', { pending: true });
+      var sendBtn = this.shadowRoot.getElementById('send');
+      sendBtn.disabled = true;
       this._showError('');
 
       var self = this;
@@ -261,17 +294,17 @@
         .then(function (data) {
           if (data.error) {
             self._showError(data.error);
-            self._addMessage('assistant', 'Fehler: ' + data.error);
+            self._setLastAssistantMessage('Fehler: ' + data.error);
           } else {
-            self._addMessage('assistant', data.response != null ? data.response : (data.response || ''));
+            self._setLastAssistantMessage(data.response != null ? data.response : (data.response || ''));
           }
         })
         .catch(function (e) {
           self._showError('Fehler: ' + (e.message || String(e)));
-          self._addMessage('assistant', 'Aktion fehlgeschlagen. HA URL/Token in den App-Optionen prüfen.');
+          self._setLastAssistantMessage('Aktion fehlgeschlagen. HA URL/Token in den App-Optionen prüfen.');
         })
         .finally(function () {
-          container.classList.remove('loading');
+          sendBtn.disabled = false;
         });
     }
   }
