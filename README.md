@@ -70,6 +70,7 @@ addons/
 
 - Die App nutzt die **offizielle Microsoft-Auth-Bibliothek (MSAL)** für die Anmeldung. Es reicht die **Microsoft Client-ID** (und ggf. Tenant-ID); ein **Client-Secret ist nicht nötig**.
 - **In Azure einstellen:** App-Registrierung → **Authentifizierung** → **Erweiterte Einstellungen** → **„Öffentliche Clientflows zulassen“** auf **Ja** setzen. Redirect-URI für „Mobile und Desktopanwendungen“ (z. B. `https://login.microsoft.com/common/oauth2/nativeclient`) hinzufügen. API-Berechtigungen: **Notes.Read**, **User.Read** (delegiert).
+  - **Wichtig:** Wenn du den Fehler **AADSTS7000218** („client_assertion or client_secret“) siehst, ist „Öffentliche Clientflows zulassen“ noch auf **Nein** – dann auf **Ja** stellen, speichern und Sync/App neu starten.
 - **Sync beim Start:** Beim **Start der App** wird automatisch ein OneNote-Sync ausgeführt. Wenn noch **kein Token** im MSAL-Cache ist, startet der **Device Flow** – dann erscheinen im **App-Log** eine Meldung und ein **Anmelde-Code**:
   ```
   ============================================================

@@ -86,6 +86,14 @@ def get_access_token_msal(
     if "access_token" not in result:
         err = result.get("error_description") or result.get("error", "unknown")
         logger.warning("MSAL: Token-Abruf fehlgeschlagen: %s", err)
+        if "AADSTS7000218" in str(err) or "client_assertion" in str(err).lower() or "client_secret" in str(err).lower():
+            msg = (
+                "Azure verlangt client_secret – die App ist als „vertraulicher Client“ eingestellt.\n"
+                "Lösung: Im Azure Portal → App-Registrierung → deine App → Authentifizierung\n"
+                "         → Erweiterte Einstellungen → „Öffentliche Clientflows zulassen“ auf JA setzen."
+            )
+            print("\n  " + msg.replace("\n", "\n  ") + "\n")
+            logger.warning("MSAL: %s", msg)
         return (None, None)
 
     # Cache speichern
