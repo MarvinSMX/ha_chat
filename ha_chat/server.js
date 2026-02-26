@@ -7,6 +7,12 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 
+// HTTPS-Aufrufe zu N8N: Zertifikatsprüfung überspringen (z. B. selbstsigniert / lokales N8N)
+if (process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '1') {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  console.log('[HA Chat] NODE_TLS_REJECT_UNAUTHORIZED=0 (SSL-Verifikation für Webhook deaktiviert)');
+}
+
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const OPTIONS_PATH = path.join(DATA_DIR, 'options.json');
 const WWW_DIR = path.join(__dirname, 'www');
@@ -18,7 +24,9 @@ function getInferenceUrl() {
     const opts = JSON.parse(raw);
     const u = (opts.n8n_inference_webhook_url || '').trim();
     if (u) return u.replace(/\/$/, '');
-  } catch (_) {}
+  } catch (e) {
+    console.log('[HA Chat] options.json nicht lesbar:', e.message);
+  }
   const u = (process.env.N8N_INFERENCE_WEBHOOK_URL || '').trim();
   return u ? u.replace(/\/$/, '') : '';
 }
@@ -32,19 +40,41 @@ function collectBody(req) {
   });
 }
 
-function proxyToN8n(webhookUrl, body, res) {
+function proxyToN8n(webhookUrl, body, res, logLabel) {
   const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
+  console.log('[HA Chat] ' + logLabel + ' → POST ' + webhookUrl + ' body=' + bodyStr);
   fetch(webhookUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: bodyStr,
   })
-    .then((r) => r.text())
-    .then((text) => {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(text || '{}');
+    .then((r) => {
+      return r.text().then((text) => {
+        console.log('[HA Chat] ' + logLabel + ' ← ' + r.status + ' ' + r.statusText + ' len=' + (text ? text.length : 0));
+        if (!r.ok) {
+          console.log('[HA Chat] ' + logLabel + ' Fehler-Body: ' + (text ? text.slice(0, 500) : '(leer)'));
+        } else if (text) {
+          const preview = text.length > 300 ? text.slice(0, 300) + '…' : text;
+          console.log('[HA Chat] ' + logLabel + ' Body: ' + preview);
+        }
+        return { ok: r.ok, status: r.status, text };
+      });
+    })
+    .then(({ ok, status, text }) => {
+      let out = text || '{}';
+      try {
+        const data = JSON.parse(out);
+        if (data.answer === undefined && data.response !== undefined) {
+          data.answer = data.response;
+          out = JSON.stringify(data);
+          console.log('[HA Chat] ' + logLabel + ' Antwort verwendet "response" als "answer"');
+        }
+      } catch (_) {}
+      res.writeHead(ok ? 200 : status, { 'Content-Type': 'application/json' });
+      res.end(out);
     })
     .catch((e) => {
+      console.log('[HA Chat] ' + logLabel + ' Exception: ' + (e.message || String(e)));
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: e.message || String(e) }));
     });
@@ -76,6 +106,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/chat' && req.method === 'POST') {
     const inferenceUrl = getInferenceUrl();
     if (!inferenceUrl) {
+      console.log('[HA Chat] chat: Webhook-URL fehlt (options.json oder N8N_INFERENCE_WEBHOOK_URL prüfen)');
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'N8N Inference-Webhook-URL fehlt (Add-on konfigurieren)' }));
       return;
@@ -95,7 +126,7 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ error: 'message fehlt' }));
       return;
     }
-    proxyToN8n(inferenceUrl, { message }, res);
+    proxyToN8n(inferenceUrl, { message }, res, 'chat');
     return;
   }
 
@@ -103,6 +134,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/execute_action' && req.method === 'POST') {
     const inferenceUrl = getInferenceUrl();
     if (!inferenceUrl) {
+      console.log('[HA Chat] execute_action: Webhook-URL fehlt');
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'N8N Inference-Webhook-URL fehlt (Add-on konfigurieren)' }));
       return;
@@ -117,7 +149,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const utterance = (data.utterance || '').trim();
-    proxyToN8n(inferenceUrl, { message: utterance }, res);
+    proxyToN8n(inferenceUrl, { message: utterance }, res, 'action');
     return;
   }
 
@@ -156,5 +188,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
+  const inferenceUrl = getInferenceUrl();
   console.log('HA Chat (Frontend + N8N Proxy) auf http://0.0.0.0:' + PORT);
+  console.log('[HA Chat] N8N Inference-Webhook: ' + (inferenceUrl ? 'gesetzt (' + inferenceUrl.split('/')[0] + '//' + (inferenceUrl.split('/')[2] || '') + '/…)' : 'nicht konfiguriert'));
 });
