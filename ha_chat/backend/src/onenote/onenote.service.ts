@@ -15,14 +15,14 @@ async function graphFetch<T>(url: string, accessToken: string, key: string = 'va
   const out: T[] = [];
   let next: string | null = url;
   while (next) {
-    const res = await fetch(next, {
+    const res: Response = await fetch(next, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!res.ok) throw new Error(`Graph: ${res.status} ${res.statusText}`);
-    const data = await res.json();
+    const data = (await res.json()) as { [k: string]: unknown };
     const list = data[key];
-    if (Array.isArray(list)) out.push(...list);
-    next = (data['@odata.nextLink'] || '').trim() || null;
+    if (Array.isArray(list)) out.push(...(list as T[]));
+    next = (data['@odata.nextLink'] as string)?.trim() || null;
   }
   return out;
 }

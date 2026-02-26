@@ -69,9 +69,7 @@ export async function getAccessToken(): Promise<string | null> {
 
   const app = new PublicClientApplication(config);
 
-  await app.initialize();
-
-  const accounts = await app.getAllAccounts();
+  const accounts = await app.getAccounts();
   if (accounts.length > 0) {
     const result: AuthenticationResult | null = await app.acquireTokenSilent({
       scopes: SCOPES,
@@ -134,9 +132,8 @@ export async function getAccessTokenSilent(): Promise<string | null> {
   };
 
   const app = new PublicClientApplication(config);
-  await app.initialize();
 
-  const accounts = await app.getAllAccounts();
+  const accounts = await app.getAccounts();
   if (accounts.length === 0) return null;
 
   const result = await app.acquireTokenSilent({
