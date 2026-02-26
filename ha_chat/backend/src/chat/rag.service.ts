@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import { AzureOpenAI } from 'openai';
 import { getOptions, getEmbeddingConfig, getChatConfig } from '../config/options';
 import * as chromaService from './chroma.service';
 
@@ -9,23 +9,27 @@ export interface ChatResponse {
 }
 
 export class RagService {
-  private getEmbeddingClient(): OpenAI | null {
+  private getEmbeddingClient(): AzureOpenAI | null {
     const opts = getOptions();
     const cfg = getEmbeddingConfig(opts);
     if (!cfg.endpoint || !cfg.apiKey || !cfg.deployment) return null;
-    return new OpenAI({
-      azure: { endpoint: cfg.endpoint, apiVersion: '2024-02-01' },
+    return new AzureOpenAI({
+      endpoint: cfg.endpoint,
       apiKey: cfg.apiKey,
+      deployment: cfg.deployment,
+      apiVersion: '2024-02-01',
     });
   }
 
-  private getChatClient(): OpenAI | null {
+  private getChatClient(): AzureOpenAI | null {
     const opts = getOptions();
     const cfg = getChatConfig(opts);
     if (!cfg.endpoint || !cfg.apiKey || !cfg.deployment) return null;
-    return new OpenAI({
-      azure: { endpoint: cfg.endpoint, apiVersion: '2024-02-01' },
+    return new AzureOpenAI({
+      endpoint: cfg.endpoint,
       apiKey: cfg.apiKey,
+      deployment: cfg.deployment,
+      apiVersion: '2024-02-01',
     });
   }
 
