@@ -16,7 +16,7 @@ RUN npm run build
 # Final: Backend + Frontend + Chroma (Python) für Vektorspeicher
 FROM node:20-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip && rm -rf /var/lib/apt/lists/* \
-  && pip install --no-cache-dir chromadb
+  && pip install --break-system-packages --no-cache-dir chromadb
 
 WORKDIR /app/backend
 COPY --from=backend /app/backend/package*.json ./
