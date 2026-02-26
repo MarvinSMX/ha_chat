@@ -10,8 +10,8 @@ import { htmlToText } from '../util/html-to-text';
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const ONENOTE_SELECTION_PATH = join(DATA_DIR, 'onenote_selection.json');
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
-/** Max. Chunks pro Batch – reduziert Speicherverbrauch (vermeidet Heap OOM bei großen Notizbüchern) */
-const SYNC_BATCH_SIZE = 15;
+/** Max. Chunks pro Batch – gering für niedrigen Speicherverbrauch (leichgewichtiger Sync) */
+const SYNC_BATCH_SIZE = 5;
 
 async function graphFetch<T>(url: string, accessToken: string, key: string = 'value'): Promise<T[]> {
   const out: T[] = [];

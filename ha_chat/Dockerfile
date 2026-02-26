@@ -14,8 +14,8 @@ COPY backend/ ./
 RUN node node_modules/@nestjs/cli/bin/nest.js build
 RUN npm prune --production
 
-# Final: nur Node – Frontend + API (OneNote/Graph, N8N-Webhooks)
-FROM node:20-bookworm
+# Final: schlankes Image – nur Node (bookworm-slim), Frontend + API
+FROM node:20-bookworm-slim
 WORKDIR /app/backend
 COPY --from=backend /app/backend/package*.json ./
 COPY --from=backend /app/backend/node_modules ./node_modules
