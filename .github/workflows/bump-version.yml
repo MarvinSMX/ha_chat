@@ -1,4 +1,4 @@
-# Erhöht bei jedem Push die Patch-Version in addon/ha_chat/ha_chat/config.yaml
+# Erhöht bei jedem Push die Patch-Version in ha_chat/config.yaml
 # und erstellt einen Commit (mit [skip ci], damit keine Endlosschleife entsteht).
 name: Bump version
 
@@ -7,9 +7,7 @@ on:
     branches:
       - main
       - master
-    paths:
-      - "ha_chat/**"
-      - ".github/workflows/bump-version.yml"
+    # Kein paths-Filter: Version wird bei jedem Push erhöht
 
 # Job überspringen, wenn der letzte Commit bereits ein Version-Bump war
 jobs:

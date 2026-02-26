@@ -3,7 +3,6 @@ import re
 import asyncio
 import json
 import logging
-import urllib.parse
 from typing import Callable, Awaitable, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -84,22 +83,17 @@ async def get_token_via_device_flow(
     logger.info("OneNote Device Flow: Öffne %s und gib ein: %s (Warte bis zu 5 Min. auf Anmeldung)", verification_uri, user_code)
     logger.info("OneNote Device Flow: client_secret gesetzt (Länge %d Zeichen)", len(client_secret))
     token_url = f"{base}/token"
-    body = urllib.parse.urlencode({
+    payload = {
         "client_id": client_id,
         "client_secret": client_secret,
         "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
         "device_code": device_code,
-    })
-    body_bytes = body.encode("utf-8")
+    }
     tried_public_client = False
     for i in range(60):
         await asyncio.sleep(5)
-        # Zuerst mit client_secret (vertraulicher Client)
-        async with session.post(
-            token_url,
-            data=body_bytes,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        ) as tok_resp:
+        # Token-Request: dict als data lässt aiohttp als application/x-www-form-urlencoded senden
+        async with session.post(token_url, data=payload) as tok_resp:
             resp_body = await tok_resp.text()
             status = tok_resp.status
         try:
@@ -117,17 +111,12 @@ async def get_token_via_device_flow(
         if status == 401 and err == "invalid_client" and not tried_public_client:
             tried_public_client = True
             logger.info("OneNote Device Flow: Erneuter Versuch ohne client_secret (öffentlicher Client)")
-            body_public = urllib.parse.urlencode({
+            payload_public = {
                 "client_id": client_id,
                 "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
                 "device_code": device_code,
-            })
-            body_public_bytes = body_public.encode("utf-8")
-            async with session.post(
-                token_url,
-                data=body_public_bytes,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            ) as tok2:
+            }
+            async with session.post(token_url, data=payload_public) as tok2:
                 resp_body = await tok2.text()
                 status = tok2.status
             try:
@@ -153,14 +142,13 @@ async def refresh_access_token(
     tenant: str, client_id: str, client_secret: str, refresh_token: str, session
 ) -> Optional[str]:
     url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
-    body = urllib.parse.urlencode({
+    async with session.post(url, data={
         "client_id": client_id,
         "client_secret": client_secret,
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
         "scope": GRAPH_SCOPES,
-    })
-    async with session.post(url, data=body.encode("utf-8"), headers={"Content-Type": "application/x-www-form-urlencoded"}) as resp:
+    }) as resp:
         if resp.status != 200:
             return None
         data = await resp.json()
