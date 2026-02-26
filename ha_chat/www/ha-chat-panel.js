@@ -55,30 +55,25 @@
   }
 
   function parseJsonResponse(r) {
-    var ct = (r.headers.get('Content-Type') || '').toLowerCase();
-    if (!ct.includes('application/json')) {
-      return r.text().then(function (text) {
-        var msg = r.status ? 'HTTP ' + r.status : 'Ungültige Antwort';
-        if (text && text.length < 300) msg += ': ' + text;
+    return r.text().then(function (text) {
+      var data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch (e) {
+        var msg = r.status ? 'HTTP ' + r.status : 'Antwort ist kein JSON';
+        if (text && (text.indexOf('<') === 0 || text.indexOf('<!') === 0)) {
+          msg += ' – Fehlerseite (Add-on/Ingress prüfen)';
+        } else if (text && text.length < 200) {
+          msg += ': ' + text;
+        }
         throw new Error(msg);
-      });
-    }
-    return r.text()
-      .then(function (text) {
-        var data;
-        try {
-          data = JSON.parse(text);
-        } catch (e) {
-          var msg = r.status ? 'HTTP ' + r.status : 'Antwort ist kein JSON';
-          if (text && text.substring(0, 50).indexOf('<') !== -1) msg += ' (wahrscheinlich Fehlerseite – Add-on/Ingress prüfen)';
-          throw new Error(msg);
-        }
-        if (!r.ok) {
-          var err = (data && data.error) || (r.status ? 'HTTP ' + r.status : 'Fehler');
-          throw new Error(err);
-        }
-        return data;
-      });
+      }
+      if (!r.ok) {
+        var err = (data && data.error) || (r.status ? 'HTTP ' + r.status : 'Fehler');
+        throw new Error(err);
+      }
+      return data;
+    });
   }
 
   class HaChatPanel extends HTMLElement {
