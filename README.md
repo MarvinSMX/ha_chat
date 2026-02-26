@@ -23,6 +23,7 @@ addons/
     azure_openai.py
     onenote_sync.py
     langchain_rag.py
+    msal_auth.py
     www/
       index.html
       ha-chat-panel.js
@@ -36,7 +37,7 @@ addons/
 4. App **installieren** und **starten**.
 5. App **konfigurieren** (Zahnrad):  
    - **Azure Endpoint**, **Azure API-Schlüssel**, **Embedding-Deployment**, **Chat-Deployment** (Pflicht).  
-   - Optional: **Microsoft Client-ID**, **Client-Secret**, **Tenant-ID** (für OneNote-Sync).  
+   - Optional: **Microsoft Client-ID**, **Tenant-ID** (für OneNote-Sync). **Client-Secret nicht nötig** – die App nutzt die offizielle **MSAL** (Microsoft Authentication Library) als öffentlichen Client.
    - Optional: **HA URL**, **HA Token** (für „Aktion ausführen“ / Conversation API).  
 6. **Speichern** und App ggf. neu starten.
 
@@ -67,21 +68,19 @@ addons/
 
 ## OneNote-Sync
 
-- In den App-Optionen **Microsoft Client-ID**, **Client-Secret** und ggf. **Tenant-ID** eintragen (Client-Secret aus Azure Portal → App-Registrierung → Zertifikate & Geheimnisse).
-- **Sync beim Start:** Beim **Start der App** wird automatisch ein OneNote-Sync ausgeführt. Wenn noch **kein Refresh-Token** vorhanden ist, startet der **Device Flow** – dann erscheinen im **App-Log** (Einstellungen → Apps → HA Chat → Logs) bzw. im Terminal eine klare Meldung und ein **Anmelde-Code**:
+- Die App nutzt die **offizielle Microsoft-Auth-Bibliothek (MSAL)** für die Anmeldung. Es reicht die **Microsoft Client-ID** (und ggf. Tenant-ID); ein **Client-Secret ist nicht nötig**.
+- **In Azure einstellen:** App-Registrierung → **Authentifizierung** → **Erweiterte Einstellungen** → **„Öffentliche Clientflows zulassen“** auf **Ja** setzen. Redirect-URI für „Mobile und Desktopanwendungen“ (z. B. `https://login.microsoft.com/common/oauth2/nativeclient`) hinzufügen. API-Berechtigungen: **Notes.Read**, **User.Read** (delegiert).
+- **Sync beim Start:** Beim **Start der App** wird automatisch ein OneNote-Sync ausgeführt. Wenn noch **kein Token** im MSAL-Cache ist, startet der **Device Flow** – dann erscheinen im **App-Log** eine Meldung und ein **Anmelde-Code**:
   ```
   ============================================================
-    HA Chat – OneNote-Anmeldung (Device Flow)
+    HA Chat – OneNote-Anmeldung (Microsoft MSAL)
   ============================================================
     Öffne im Browser:  https://login.microsoft.com/device
     Gib folgenden Code ein:  XXXXXXX
     (Gültig ca. 15 Min. – Warte auf deine Anmeldung …)
   ============================================================
   ```
-  **Vorgehen:** Diese URL im Browser öffnen, Code eingeben, mit deinem Microsoft-Konto anmelden. Die App wartet bis zu 5 Minuten und speichert danach den Refresh-Token; weitere Syncs laufen ohne erneute Anmeldung.
-- **Fehler AADSTS7000218** („client_secret“ fehlt):  
-  - Stelle sicher, dass in den App-Optionen das **Client-Secret** aus der Azure-App-Registrierung eingetragen ist (Zertifikate & Geheimnisse → Geheimnis erstellen → Wert kopieren).  
-  - **Alternative:** In Azure unter **Authentifizierung** → **Erweiterte Einstellungen** die Option **„Öffentliche Clientflows zulassen“** auf **Ja** setzen. Dann wird beim Device Flow kein Secret benötigt – die App versucht nach einem Fehler automatisch die Anmeldung ohne Secret.
+  **Vorgehen:** URL im Browser öffnen, Code eingeben, mit Microsoft-Konto anmelden. Die App speichert den Token im MSAL-Cache (`/data/msal_token_cache.json`); weitere Syncs laufen ohne erneute Anmeldung.
 - **Notizbuch in der Weboberfläche wählen (empfohlen):**
   - Im Browser `http://<dein-ha>:8765` öffnen.
   - **Oben** auf der Seite den Bereich **„OneNote – Notizbuch für Sync“** → **„Notizbücher laden“** (nach erfolgter Anmeldung erscheinen deine Notizbücher).
@@ -91,6 +90,6 @@ addons/
 
 ## Hinweise
 
-- ChromaDB-Daten und (nach erstem Sync) der Microsoft Refresh-Token liegen unter `/data` im Container (persistent).
+- ChromaDB-Daten und der **MSAL-Token-Cache** (`/data/msal_token_cache.json`) liegen unter `/data` im Container (persistent).
 - Beim **Start** der App erscheint im Log ein kurzer Hinweis zur Weboberfläche und zur OneNote-Anmeldung (falls konfiguriert).
 - **Nur dieses Add-on wird gepflegt.** Custom Integration und separates Frontend-Panel gehören nicht zum Projektumfang.

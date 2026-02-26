@@ -58,86 +58,6 @@ def chunk_text(text: str, chunk_size: int = 3600, overlap: int = 480) -> List[Tu
     return out
 
 
-async def get_token_via_device_flow(
-    tenant: str, client_id: str, client_secret: str, session
-) -> Optional[Tuple[str, str]]:
-    if not (client_id and client_secret):
-        logger.warning("OneNote Device Flow: client_id und client_secret müssen gesetzt sein (App-Optionen)")
-        return None
-    base = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0"
-    async with session.post(f"{base}/devicecode", data={"client_id": client_id, "scope": GRAPH_SCOPES}) as resp:
-        if resp.status != 200:
-            return None
-        data = await resp.json()
-    device_code = data.get("device_code")
-    verification_uri = data.get("verification_uri") or "https://login.microsoft.com/device"
-    user_code = data.get("user_code")
-    message = data.get("message", "")
-    print("\n" + "=" * 60)
-    print("  HA Chat – OneNote-Anmeldung (Device Flow)")
-    print("=" * 60)
-    print("  Öffne im Browser:  " + verification_uri)
-    print("  Gib folgenden Code ein:  " + str(user_code))
-    print("  (Gültig ca. 15 Min. – Warte auf deine Anmeldung …)")
-    print("=" * 60 + "\n")
-    logger.info("OneNote Device Flow: Öffne %s und gib ein: %s (Warte bis zu 5 Min. auf Anmeldung)", verification_uri, user_code)
-    logger.info("OneNote Device Flow: client_secret gesetzt (Länge %d Zeichen)", len(client_secret))
-    token_url = f"{base}/token"
-    payload = {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-        "device_code": device_code,
-    }
-    tried_public_client = False
-    for i in range(60):
-        await asyncio.sleep(5)
-        # Token-Request: dict als data lässt aiohttp als application/x-www-form-urlencoded senden
-        async with session.post(token_url, data=payload) as tok_resp:
-            resp_body = await tok_resp.text()
-            status = tok_resp.status
-        try:
-            tok_data = json.loads(resp_body) if resp_body else {}
-        except Exception:
-            tok_data = {}
-        if status == 200 and "access_token" in tok_data:
-            print("  OneNote-Anmeldung erfolgreich.\n")
-            logger.info("OneNote Device Flow: Anmeldung erfolgreich")
-            return (tok_data["access_token"], tok_data.get("refresh_token", ""))
-        err = tok_data.get("error")
-        if err == "authorization_pending":
-            continue
-        # 401 invalid_client: einmal ohne client_secret versuchen (öffentlicher Client)
-        if status == 401 and err == "invalid_client" and not tried_public_client:
-            tried_public_client = True
-            logger.info("OneNote Device Flow: Erneuter Versuch ohne client_secret (öffentlicher Client)")
-            payload_public = {
-                "client_id": client_id,
-                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-                "device_code": device_code,
-            }
-            async with session.post(token_url, data=payload_public) as tok2:
-                resp_body = await tok2.text()
-                status = tok2.status
-            try:
-                tok_data = json.loads(resp_body) if resp_body else {}
-            except Exception:
-                tok_data = {}
-            if status == 200 and "access_token" in tok_data:
-                print("  OneNote-Anmeldung erfolgreich (öffentlicher Client).\n")
-                logger.info("OneNote Device Flow: Anmeldung erfolgreich (ohne client_secret)")
-                return (tok_data["access_token"], tok_data.get("refresh_token", ""))
-        if status != 200:
-            logger.warning("OneNote Device Flow: Token-Antwort %s: %s", status, resp_body[:300])
-        logger.warning(
-            "OneNote Device Flow beendet: error=%s description=%s",
-            err,
-            tok_data.get("error_description", ""),
-        )
-        break
-    return None
-
-
 async def refresh_access_token(
     tenant: str, client_id: str, client_secret: str, refresh_token: str, session
 ) -> Optional[str]:
@@ -158,22 +78,23 @@ async def refresh_access_token(
 async def check_onenote_access(
     tenant: str, client_id: str, client_secret: str, refresh_token: Optional[str], session,
     notebook_id: Optional[str] = None, notebook_name: Optional[str] = None,
+    access_token: Optional[str] = None,
 ) -> Tuple[bool, str, List[dict], Optional[bool], Optional[str]]:
     """
     Prüft nur, ob auf OneNote zugegriffen werden kann und listet Notizbücher.
     Returns: (success, message, notebooks_list, configured_notebook_found, configured_notebook_name)
     """
     logger.info("OneNote-Zugriffstest gestartet (notebook_id=%s, notebook_name=%s)", notebook_id or "-", notebook_name or "-")
-    if not client_id or not client_secret:
-        return (False, "Microsoft Client-ID/Secret fehlt", [], None, None)
-    if refresh_token:
-        access_token = await refresh_access_token(tenant, client_id, client_secret, refresh_token, session)
-        if not access_token:
-            logger.warning("OneNote-Zugriffstest: Refresh-Token ungültig")
-            return (False, "Refresh-Token ungültig oder abgelaufen", [], None, None)
-    else:
-        logger.info("OneNote-Zugriffstest: Kein Refresh-Token – bitte zuerst Sync ausführen (Device Flow)")
-        return (False, "Kein Refresh-Token. Einmal POST /api/sync_onenote ausführen und anmelden.", [], None, None)
+    if not client_id:
+        return (False, "Microsoft Client-ID fehlt", [], None, None)
+    if not access_token:
+        if refresh_token and client_secret:
+            access_token = await refresh_access_token(tenant, client_id, client_secret, refresh_token, session)
+            if not access_token:
+                logger.warning("OneNote-Zugriffstest: Refresh-Token ungültig")
+                return (False, "Refresh-Token ungültig oder abgelaufen", [], None, None)
+        else:
+            return (False, "Kein Token. Sync ausführen (MSAL Device Flow) oder Refresh-Token setzen.", [], None, None)
     try:
         notebooks = await _fetch_all(GRAPH_NOTEBOOKS_URL, access_token, session)
     except Exception as e:
@@ -283,25 +204,21 @@ async def run_sync(
     session,
     notebook_id: Optional[str] = None,
     notebook_name: Optional[str] = None,
+    access_token: Optional[str] = None,
 ) -> Tuple[int, Optional[str]]:
     logger.info("OneNote-Sync gestartet (notebook_id=%s, notebook_name=%s)", notebook_id or "(alle)", notebook_name or "-")
-    if not client_id or not client_secret:
-        logger.warning("OneNote-Sync: Microsoft Client-ID/Secret fehlt")
+    if not client_id:
+        logger.warning("OneNote-Sync: Microsoft Client-ID fehlt")
         return (0, None)
-    if refresh_token:
-        access_token = await refresh_access_token(tenant, client_id, client_secret, refresh_token, session)
-        if not access_token:
-            logger.warning("OneNote-Sync: Refresh-Token ungültig oder abgelaufen")
-            return (0, None)
-    else:
-        logger.info("OneNote-Sync: Kein Refresh-Token – Device Flow wird ausgeführt")
-        result = await get_token_via_device_flow(tenant, client_id, client_secret, session)
-        if not result:
-            logger.warning("OneNote-Sync: Device Flow abgebrochen oder fehlgeschlagen")
-            return (0, None)
-        access_token, refresh_token = result
     if not access_token:
-        return (0, None)
+        if refresh_token and client_secret:
+            access_token = await refresh_access_token(tenant, client_id, client_secret, refresh_token, session)
+            if not access_token:
+                logger.warning("OneNote-Sync: Refresh-Token ungültig oder abgelaufen")
+                return (0, None)
+        else:
+            logger.warning("OneNote-Sync: Weder Access Token (MSAL) noch gültiger Refresh-Token – MSAL-Cache prüfen oder Device Flow auslösen")
+            return (0, None)
     logger.info("OneNote-Sync: Zugriffstoken erhalten, rufe Seiten ab ...")
     pages = await fetch_pages(access_token, session, notebook_id=notebook_id, notebook_name=notebook_name)
     if not pages:
@@ -325,9 +242,9 @@ async def run_sync(
             metadatas.append(meta)
     if not documents:
         logger.info("OneNote-Sync: Keine Chunks aus Seiten erzeugt")
-        return (0, refresh_token)
+        return (0, None)
     logger.info("OneNote-Sync: %d Chunks werden embedded und in ChromaDB geschrieben ...", len(documents))
     embeddings = [await get_embedding_fn(d) for d in documents]
     await chromadb_add_fn(ids, documents, metadatas, embeddings)
     logger.info("OneNote-Sync: Fertig – %d Dokumente in ChromaDB", len(documents))
-    return (len(documents), refresh_token)
+    return (len(documents), None)

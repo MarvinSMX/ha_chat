@@ -14,6 +14,7 @@ from chromadb_helper import chromadb_add, chromadb_query, make_doc_id, COLLECTIO
 import azure_openai
 import onenote_sync
 import langchain_rag
+import msal_auth
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 OPTIONS_PATH = Path("/data/options.json")
 REFRESH_TOKEN_PATH = Path("/data/microsoft_refresh_token")
 ONENOTE_SELECTION_PATH = Path("/data/onenote_selection.json")
+MSAL_CACHE_PATH = "/data/msal_token_cache.json"
 CHROMADB_PATH = "/data/chromadb"
 OPTIONS = {}
 
@@ -154,16 +156,22 @@ async def handle_sync_onenote(request):
             notebook_id = (opts.get("onenote_notebook_id") or "").strip() or None
             notebook_name = (opts.get("onenote_notebook_name") or "").strip() or None
         logger.info("OneNote-Sync per API aufgerufen (Notizbuch-ID: %s, Name: %s)", notebook_id or "alle", notebook_name or "-")
-        if not client_id or not client_secret:
-            return web.json_response({"error": "Microsoft Client-ID/Secret fehlt"}, status=400)
+        if not client_id:
+            return web.json_response({"error": "Microsoft Client-ID fehlt"}, status=400)
         emb_endpoint, emb_api_key, emb_deploy = _embedding_config(opts)
         if not all([emb_endpoint, emb_api_key, emb_deploy]):
             return web.json_response({"error": "Azure OpenAI (Embedding) fehlt"}, status=400)
 
+        loop = asyncio.get_event_loop()
+        access_token, _ = await loop.run_in_executor(
+            None,
+            lambda: msal_auth.get_access_token_msal(tenant, client_id, MSAL_CACHE_PATH),
+        )
+        if not access_token:
+            return web.json_response({"error": "OneNote-Anmeldung fehlgeschlagen (MSAL). Log prüfen, ggf. Device Flow erneut ausführen."}, status=401)
+
         async def get_emb(text):
             return await azure_openai.get_embedding(emb_endpoint, emb_api_key, emb_deploy, text)
-
-        loop = asyncio.get_event_loop()
 
         async def add_fn(ids, docs, metas, embs):
             await loop.run_in_executor(
@@ -172,12 +180,11 @@ async def handle_sync_onenote(request):
             )
 
         async with ClientSession() as session:
-            count, new_refresh = await onenote_sync.run_sync(
+            count, _ = await onenote_sync.run_sync(
                 tenant, client_id, client_secret, refresh_token, get_emb, add_fn, session,
                 notebook_id=notebook_id, notebook_name=notebook_name,
+                access_token=access_token,
             )
-        if new_refresh and new_refresh != refresh_token:
-            set_refresh_token(new_refresh)
         logger.info("OneNote-Sync abgeschlossen: %d Dokumente in ChromaDB", count)
         return web.json_response({"documents_added": count})
     except Exception as e:
@@ -197,10 +204,19 @@ async def handle_onenote_status(request):
         if notebook_id is None and notebook_name is None:
             notebook_id = (opts.get("onenote_notebook_id") or "").strip() or None
             notebook_name = (opts.get("onenote_notebook_name") or "").strip() or None
+
+        access_token = None
+        if client_id:
+            loop = asyncio.get_event_loop()
+            access_token, _ = await loop.run_in_executor(
+                None,
+                lambda: msal_auth.get_access_token_msal(tenant, client_id, MSAL_CACHE_PATH),
+            )
         async with ClientSession() as session:
             ok, message, notebooks, configured_found, configured_name = await onenote_sync.check_onenote_access(
                 tenant, client_id, client_secret, refresh_token, session,
                 notebook_id=notebook_id, notebook_name=notebook_name,
+                access_token=access_token,
             )
         return web.json_response({
             "success": ok,
@@ -288,12 +304,11 @@ async def handle_add_documents(request):
 
 
 async def _run_startup_sync(app):
-    """Startet beim App-Start einmal den OneNote-Sync im Hintergrund (inkl. Device Flow falls nötig)."""
+    """Startet beim App-Start einmal den OneNote-Sync im Hintergrund (MSAL Device Flow falls nötig)."""
     opts = get_opts()
     client_id = (opts.get("microsoft_client_id") or "").strip()
-    client_secret = (opts.get("microsoft_client_secret") or "").strip()
-    if not client_id or not client_secret:
-        logger.info("OneNote-Sync beim Start übersprungen: Microsoft Client-ID/Secret nicht gesetzt.")
+    if not client_id:
+        logger.info("OneNote-Sync beim Start übersprungen: Microsoft Client-ID nicht gesetzt.")
         return
     emb_endpoint, emb_api_key, emb_deploy = _embedding_config(opts)
     if not all([emb_endpoint, emb_api_key, emb_deploy]):
@@ -306,21 +321,28 @@ async def _run_startup_sync(app):
         notebook_id = (opts.get("onenote_notebook_id") or "").strip() or None
         notebook_name = (opts.get("onenote_notebook_name") or "").strip() or None
 
+    loop = asyncio.get_event_loop()
+    access_token, _ = await loop.run_in_executor(
+        None,
+        lambda: msal_auth.get_access_token_msal(tenant, client_id, MSAL_CACHE_PATH),
+    )
+    if not access_token:
+        logger.warning("OneNote-Sync beim Start: Kein Token (MSAL). Log prüfen, ggf. Device Flow im Log abwarten.")
+        return
+
     async def get_emb(text):
         return await azure_openai.get_embedding(emb_endpoint, emb_api_key, emb_deploy, text)
 
-    loop = asyncio.get_event_loop()
     async def add_fn(ids, docs, metas, embs):
         await loop.run_in_executor(None, lambda: chromadb_add(CHROMADB_PATH, COLLECTION_NAME, ids, docs, metas, embs))
 
     try:
         async with ClientSession() as session:
-            count, new_refresh = await onenote_sync.run_sync(
-                tenant, client_id, client_secret, refresh_token, get_emb, add_fn, session,
+            count, _ = await onenote_sync.run_sync(
+                tenant, client_id, "", refresh_token, get_emb, add_fn, session,
                 notebook_id=notebook_id, notebook_name=notebook_name,
+                access_token=access_token,
             )
-        if new_refresh and new_refresh != refresh_token:
-            set_refresh_token(new_refresh)
         logger.info("OneNote-Sync beim Start abgeschlossen: %d Dokumente in ChromaDB", count)
     except Exception as e:
         logger.exception("OneNote-Sync beim Start fehlgeschlagen: %s", e)

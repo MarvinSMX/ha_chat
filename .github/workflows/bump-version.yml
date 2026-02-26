@@ -24,13 +24,24 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Bump patch version
+      - name: Find config and bump patch version
         id: bump
         run: |
-          CONFIG="ha_chat/config.yaml"
+          # Repo-Root kann addon/ha_chat (dann ha_chat/config.yaml) oder darüber (dann addon/ha_chat/ha_chat/config.yaml) sein
+          if [ -f "addon/ha_chat/ha_chat/config.yaml" ]; then
+            CONFIG="addon/ha_chat/ha_chat/config.yaml"
+          elif [ -f "ha_chat/config.yaml" ]; then
+            CONFIG="ha_chat/config.yaml"
+          else
+            echo "Could not find config.yaml (tried addon/ha_chat/ha_chat/config.yaml and ha_chat/config.yaml)"
+            ls -laR . 2>/dev/null || true
+            exit 1
+          fi
+          echo "config_path=$CONFIG" >> $GITHUB_OUTPUT
           V=$(grep '^version:' "$CONFIG" | sed -n 's/version: *"\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)".*/\1.\2.\3/p')
           if [ -z "$V" ]; then
             echo "Could not parse version from $CONFIG"
+            cat "$CONFIG" | head -5
             exit 1
           fi
           MAJOR=$(echo "$V" | cut -d. -f1)
@@ -40,13 +51,13 @@ jobs:
           NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           sed -i "s/^version: .*/version: \"$NEW_VERSION\"/" "$CONFIG"
-          echo "Bumped version $V -> $NEW_VERSION"
+          echo "Bumped version $V -> $NEW_VERSION in $CONFIG"
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add ha_chat/config.yaml
+          git add "${{ steps.bump.outputs.config_path }}"
           if git diff --staged --quiet; then
             echo "No version change (already up to date)"
             exit 0
