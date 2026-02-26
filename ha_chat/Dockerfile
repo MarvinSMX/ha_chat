@@ -9,9 +9,10 @@ RUN npm run build
 FROM node:20-bookworm AS backend
 WORKDIR /app/backend
 COPY backend/package*.json ./
-RUN npm install --omit=dev
+RUN npm install
 COPY backend/ ./
 RUN npm run build
+RUN npm prune --production
 
 # Final: Backend + Frontend + Chroma (Python) für Vektorspeicher
 FROM node:20-bookworm
