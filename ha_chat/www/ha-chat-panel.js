@@ -51,7 +51,9 @@
   `;
 
   function apiBase() {
-    return window.location.origin;
+    var origin = window.location.origin;
+    var path = (window.location.pathname || '/').replace(/\/$/, '');
+    return path ? (origin + path) : origin;
   }
 
   function parseJsonResponse(r) {
