@@ -8,7 +8,7 @@ on:
       - main
       - master
     paths:
-      - "addon/**"
+      - "ha_chat/**"
       - ".github/workflows/bump-version.yml"
 
 # Job überspringen, wenn der letzte Commit bereits ein Version-Bump war
@@ -29,7 +29,7 @@ jobs:
       - name: Bump patch version
         id: bump
         run: |
-          CONFIG="addon/ha_chat/ha_chat/config.yaml"
+          CONFIG="ha_chat/config.yaml"
           V=$(grep '^version:' "$CONFIG" | sed -n 's/version: *"\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)".*/\1.\2.\3/p')
           if [ -z "$V" ]; then
             echo "Could not parse version from $CONFIG"
@@ -48,7 +48,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add addon/ha_chat/ha_chat/config.yaml
+          git add ha_chat/config.yaml
           if git diff --staged --quiet; then
             echo "No version change (already up to date)"
             exit 0
