@@ -9,9 +9,10 @@ RUN npm run build
 FROM node:20-bookworm AS backend
 WORKDIR /app/backend
 COPY backend/package*.json ./
+# Ohne devDependencies ist @nestjs/cli nicht installiert – Build braucht volle Installation
 RUN npm install
 COPY backend/ ./
-RUN npm run build
+RUN node node_modules/@nestjs/cli/bin/nest.js build
 RUN npm prune --production
 
 # Final: Backend + Frontend + Chroma (Python) für Vektorspeicher

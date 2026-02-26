@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "nest build",
+    "build": "node node_modules/@nestjs/cli/bin/nest.js build",
     "start": "nest start",
     "start:prod": "node dist/main.js"
   },
