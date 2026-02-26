@@ -1,17 +1,14 @@
 #!/bin/sh
 set -e
-echo ""
-echo "=============================================="
-echo "  HA Chat (OneNote RAG) – App wird gestartet"
-echo "=============================================="
-echo "  Weboberfläche:  http://<dein-host>:8765 (oder über Ingress: Add-on → Öffnen)"
-echo "  Container läuft dauerhaft – Sync/Chat beenden die App nicht."
-echo ""
-echo "  OneNote: Beim ersten Start oder ohne"
-echo "  Refresh-Token erscheint im Log der Anmelde-Code"
-echo "  (Öffne https://login.microsoft.com/device und"
-echo "   gib den angezeigten Code ein)."
-echo "=============================================="
-echo ""
-cd /app
-exec python3 -m server
+# Mehr Heap für Node (OneNote-Sync mit vielen Seiten/Chunks), reduziert OOM-Risiko
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=2048}"
+
+CHROMA_PATH="${CHROMADB_PATH:-/data/chromadb}"
+mkdir -p "$CHROMA_PATH"
+echo "Starte Chroma unter $CHROMA_PATH auf Port 8000 …"
+chroma run --path "$CHROMA_PATH" --host 0.0.0.0 --port 8000 &
+CHROMA_PID=$!
+sleep 3
+echo "Starte NestJS (Vite-Frontend unter /) auf Port ${SUPERVISOR_INGRESS_PORT:-8099} …"
+cd /app/backend
+exec node dist/main.js

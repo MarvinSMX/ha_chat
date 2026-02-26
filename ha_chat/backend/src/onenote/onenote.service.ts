@@ -10,6 +10,8 @@ import { htmlToText } from '../util/html-to-text';
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const ONENOTE_SELECTION_PATH = join(DATA_DIR, 'onenote_selection.json');
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
+/** Max. Chunks pro Batch – reduziert Speicherverbrauch (vermeidet Heap OOM bei großen Notizbüchern) */
+const SYNC_BATCH_SIZE = 80;
 
 async function graphFetch<T>(url: string, accessToken: string, key: string = 'value'): Promise<T[]> {
   const out: T[] = [];
@@ -280,9 +282,23 @@ export class OnenoteService {
       const pages = await this.fetchAllPages(accessToken, notebookId, notebookName);
       if (pages.length === 0) return { documents_added: 0 };
 
-      const ids: string[] = [];
-      const documents: string[] = [];
-      const metadatas: Record<string, unknown>[] = [];
+      let totalAdded = 0;
+      let batchIds: string[] = [];
+      let batchDocs: string[] = [];
+      let batchMetas: Record<string, unknown>[] = [];
+
+      const flushBatch = async () => {
+        if (batchDocs.length === 0) return;
+        const embeddings: number[][] = [];
+        for (const doc of batchDocs) {
+          embeddings.push(await this.rag.getEmbedding(doc));
+        }
+        await this.rag.addToChroma(batchIds, batchDocs, batchMetas, embeddings);
+        totalAdded += batchDocs.length;
+        batchIds = [];
+        batchDocs = [];
+        batchMetas = [];
+      };
 
       for (const page of pages) {
         const pageId = page.id ?? '';
@@ -301,9 +317,9 @@ export class OnenoteService {
         const chunks = chunkText(text);
 
         for (const { text: chunkTextVal, index: chunkIdx } of chunks) {
-          ids.push(`${pageId}_${chunkIdx}`);
-          documents.push(chunkTextVal);
-          metadatas.push({
+          batchIds.push(`${pageId}_${chunkIdx}`);
+          batchDocs.push(chunkTextVal);
+          batchMetas.push({
             pageId,
             chunkIndex: chunkIdx,
             title,
@@ -312,18 +328,12 @@ export class OnenoteService {
             lastModified,
             url,
           });
+          if (batchDocs.length >= SYNC_BATCH_SIZE) await flushBatch();
         }
       }
 
-      if (documents.length === 0) return { documents_added: 0 };
-
-      const embeddings: number[][] = [];
-      for (const doc of documents) {
-        const emb = await this.rag.getEmbedding(doc);
-        embeddings.push(emb);
-      }
-      await this.rag.addToChroma(ids, documents, metadatas, embeddings);
-      return { documents_added: documents.length };
+      await flushBatch();
+      return { documents_added: totalAdded };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return { documents_added: 0, error: msg };
