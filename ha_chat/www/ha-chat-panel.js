@@ -1,6 +1,6 @@
 /**
- * HA OneNote RAG Chat – läuft in der Add-on-App (Ingress oder Port 8765).
- * Nutzt relative API: /api/chat, /api/execute_action.
+ * HA Chat – nur Frontend, Inference über N8N-Webhook (Proxy unter /api/chat, /api/execute_action).
+ * Embedding/Sync etc. liegen in N8N.
  */
 (function () {
   const template = document.createElement('template');
@@ -27,25 +27,8 @@
       .typing-indicator span:nth-child(2) { animation-delay: 0.1s; }
       .typing-indicator span:nth-child(3) { animation-delay: 0.2s; }
       @keyframes typing { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; } 40% { transform: scale(1); opacity: 1; } }
-      .onenote-card { background: #2d2d2d; border: 1px solid #444; border-radius: 8px; padding: 12px; margin-bottom: 12px; flex-shrink: 0; }
-      .onenote-card h3 { margin: 0 0 8px 0; font-size: 1em; }
-      .onenote-card button { padding: 6px 12px; margin-right: 8px; margin-bottom: 4px; cursor: pointer; background: #0d47a1; color: #fff; border: none; border-radius: 4px; }
-      .onenote-card button.secondary { background: #555; }
-      .onenote-list { list-style: none; padding: 0; margin: 8px 0 0 0; max-height: 200px; overflow-y: auto; }
-      .onenote-list li { padding: 6px 8px; margin: 4px 0; background: #1c1c1c; border-radius: 4px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
-      .onenote-list li label { flex: 1; cursor: pointer; }
-      .onenote-current { font-size: 0.9em; color: #82b1ff; margin-top: 8px; }
-      .onenote-msg { font-size: 0.85em; margin-top: 6px; color: #aaa; }
     </style>
     <div class="container">
-      <div class="onenote-card">
-        <h3>OneNote – Notizbuch für Sync</h3>
-        <p class="onenote-msg" style="margin:0 0 8px 0; font-size:0.9em; color:#aaa;">Wähle das Notizbuch, das beim Sync in die Wissensbasis übernommen werden soll.</p>
-        <button id="loadNotebooks">Notizbücher laden</button>
-        <div id="onenoteMsg" class="onenote-msg" style="display:none;"></div>
-        <div id="onenoteCurrent" class="onenote-current" style="display:none;"></div>
-        <ul id="onenoteList" class="onenote-list" style="display:none;"></ul>
-      </div>
       <div class="thread" id="thread"></div>
       <div class="input-row">
         <input type="text" id="input" placeholder="Frage stellen..." />
@@ -108,8 +91,6 @@
       var input = this.shadowRoot.getElementById('input');
       sendBtn.addEventListener('click', function () { this._send(); }.bind(this));
       input.addEventListener('keydown', function (e) { if (e.key === 'Enter') this._send(); }.bind(this));
-      var loadBtn = this.shadowRoot.getElementById('loadNotebooks');
-      if (loadBtn) loadBtn.addEventListener('click', function () { this._loadNotebooks(); }.bind(this));
     }
 
     _addMessage(role, content, extra) {
@@ -178,73 +159,6 @@
       errEl.style.display = 'block';
     }
 
-    _loadNotebooks() {
-      var self = this;
-      var msgEl = this.shadowRoot.getElementById('onenoteMsg');
-      var listEl = this.shadowRoot.getElementById('onenoteList');
-      var currentEl = this.shadowRoot.getElementById('onenoteCurrent');
-      msgEl.style.display = 'block';
-      msgEl.textContent = 'Lade …';
-      listEl.style.display = 'none';
-      listEl.innerHTML = '';
-      fetch(apiBase() + '/api/onenote_status')
-        .then(function (r) { return parseJsonResponse(r); })
-        .then(function (data) {
-          msgEl.textContent = data.success ? (data.message || '') : (data.message || 'Fehler');
-          if (data.notebooks && data.notebooks.length) {
-            listEl.style.display = 'block';
-            data.notebooks.forEach(function (nb) {
-              var li = document.createElement('li');
-              var id = nb.id || '';
-              var name = nb.displayName || nb.name || id || 'Unbenannt';
-              li.innerHTML = '<label>' + escapeHtml(name) + '</label><button type="button" class="secondary" data-id="' + escapeHtml(id) + '" data-name="' + escapeHtml(name) + '">Dieses Notizbuch für Sync verwenden</button>';
-              li.querySelector('button').addEventListener('click', function () {
-                self._setNotebook(this.dataset.id, this.dataset.name);
-              });
-              listEl.appendChild(li);
-            });
-          }
-          if (data.configured_notebook_name) {
-            currentEl.style.display = 'block';
-            currentEl.textContent = 'Aktuell für Sync: ' + data.configured_notebook_name;
-          } else if (data.success && data.notebooks && data.notebooks.length === 0) {
-            currentEl.style.display = 'block';
-            currentEl.textContent = 'Keine Notizbücher gefunden.';
-          } else {
-            currentEl.style.display = 'none';
-          }
-        })
-        .catch(function (e) {
-          msgEl.textContent = 'Fehler: ' + (e.message || String(e));
-        });
-    }
-
-    _setNotebook(notebookId, notebookName) {
-      var self = this;
-      var msgEl = this.shadowRoot.getElementById('onenoteMsg');
-      var currentEl = this.shadowRoot.getElementById('onenoteCurrent');
-      msgEl.style.display = 'block';
-      msgEl.textContent = 'Speichere …';
-      fetch(apiBase() + '/api/onenote_notebook', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notebook_id: notebookId, notebook_name: notebookName })
-      })
-        .then(function (r) { return parseJsonResponse(r); })
-        .then(function (data) {
-          if (data.error) {
-            msgEl.textContent = 'Fehler: ' + data.error;
-          } else {
-            msgEl.textContent = 'Gespeichert.';
-            currentEl.style.display = 'block';
-            currentEl.textContent = 'Aktuell für Sync: ' + (notebookName || notebookId || '');
-          }
-        })
-        .catch(function (e) {
-          msgEl.textContent = 'Fehler: ' + (e.message || String(e));
-        });
-    }
-
     _send() {
       var input = this.shadowRoot.getElementById('input');
       var sendBtn = this.shadowRoot.getElementById('send');
@@ -279,8 +193,8 @@
           clearTimeout(timeoutId);
           self._showError('Fehler: ' + (e.message || String(e)));
           var msg = e.name === 'AbortError'
-            ? 'Zeitüberschreitung (RAG kann 1–2 Min. dauern). Bitte erneut versuchen.'
-            : 'Verbindung zur App fehlgeschlagen. Add-on-Log prüfen oder Seite neu laden.';
+            ? 'Zeitüberschreitung. Bitte erneut versuchen.'
+            : 'Verbindung fehlgeschlagen. N8N-Webhook-URL in den Add-on-Optionen prüfen.';
           self._setLastAssistantMessage(msg);
         })
         .finally(function () {
@@ -308,12 +222,12 @@
             self._showError(data.error);
             self._setLastAssistantMessage('Fehler: ' + data.error);
           } else {
-            self._setLastAssistantMessage(data.response != null ? data.response : (data.response || ''));
+            self._setLastAssistantMessage(data.answer != null ? data.answer : (data.response != null ? data.response : ''));
           }
         })
         .catch(function (e) {
           self._showError('Fehler: ' + (e.message || String(e)));
-          self._setLastAssistantMessage('Aktion fehlgeschlagen. HA URL/Token in den App-Optionen prüfen.');
+          self._setLastAssistantMessage('Aktion fehlgeschlagen. N8N-Webhook prüfen.');
         })
         .finally(function () {
           sendBtn.disabled = false;
