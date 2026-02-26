@@ -1,6 +1,6 @@
 name: "HA Chat (OneNote RAG)"
 description: "Sidebar-Chat mit RAG über OneNote, ChromaDB und Azure OpenAI. Keine Integration nötig."
-version: "1.0.0"
+version: "1.0.1"
 slug: "ha_chat"
 init: false
 arch:

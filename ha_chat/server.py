@@ -13,12 +13,14 @@ from aiohttp import web, ClientSession
 from chromadb_helper import chromadb_add, chromadb_query, make_doc_id, COLLECTION_NAME
 import azure_openai
 import onenote_sync
+import langchain_rag
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 OPTIONS_PATH = Path("/data/options.json")
 REFRESH_TOKEN_PATH = Path("/data/microsoft_refresh_token")
+ONENOTE_SELECTION_PATH = Path("/data/onenote_selection.json")
 CHROMADB_PATH = "/data/chromadb"
 OPTIONS = {}
 
@@ -44,6 +46,21 @@ def get_refresh_token():
 
 def set_refresh_token(token: str):
     REFRESH_TOKEN_PATH.write_text(token)
+
+
+def load_onenote_selection():
+    """Liest die gespeicherte Notizbuch-Auswahl (notebook_id, notebook_name). Fallback: None, None."""
+    if not ONENOTE_SELECTION_PATH.exists():
+        return None, None
+    try:
+        data = json.loads(ONENOTE_SELECTION_PATH.read_text())
+        return (data.get("notebook_id") or "").strip() or None, (data.get("notebook_name") or "").strip() or None
+    except Exception:
+        return None, None
+
+
+def save_onenote_selection(notebook_id: str, notebook_name: str):
+    ONENOTE_SELECTION_PATH.write_text(json.dumps({"notebook_id": notebook_id or "", "notebook_name": notebook_name or ""}, indent=2))
 
 
 def get_opts():
@@ -108,29 +125,17 @@ async def handle_chat(request):
         if not all([chat_endpoint, chat_api_key, chat_deploy]):
             return web.json_response({"error": "Azure OpenAI (Chat/LLM) nicht konfiguriert"}, status=400)
 
-        query_embedding = await azure_openai.get_embedding(emb_endpoint, emb_api_key, emb_deploy, message)
         loop = asyncio.get_event_loop()
-        docs, metas, dists = await loop.run_in_executor(
+        answer, sources = await loop.run_in_executor(
             None,
-            lambda: chromadb_query(CHROMADB_PATH, COLLECTION_NAME, query_embedding, n_results=8),
+            lambda: langchain_rag.run_rag_sync(
+                CHROMADB_PATH,
+                emb_endpoint, emb_api_key, emb_deploy,
+                chat_endpoint, chat_api_key, chat_deploy,
+                message,
+                k=8,
+            ),
         )
-        sources = []
-        context_parts = []
-        for i, (doc, meta, dist) in enumerate(zip(docs, metas, dists)):
-            title = (meta or {}).get("title") or (meta or {}).get("section") or f"Quelle {i+1}"
-            url = (meta or {}).get("url") or ""
-            sources.append({"title": title, "url": url, "score": 1.0 - (dist or 0) if dist is not None else 1.0})
-            context_parts.append(f"[{i+1}] {doc}")
-        context_text = "\n\n".join(context_parts) if context_parts else "(Keine passenden Dokumente gefunden.)"
-        system_prompt = (
-            "Du bist ein hilfreicher Assistent mit Zugriff auf die Wissensbasis des Nutzers. "
-            "Der Kontext unterhalb stammt aus seinen synchronisierten Dokumenten (z. B. OneNote). "
-            "Antworte knapp auf Deutsch. Beziehe dich auf den Kontext und nenne Quellen (z. B. [1], [2]). "
-            "Wenn du nach deinem Zugriff gefragt wirst: Erkläre, dass du die Inhalte aus der Wissensbasis (OneNote-Sync) nutzt. "
-            "Erfinde nichts; wenn der Kontext nichts Relevantes enthält, sag das."
-        )
-        user_prompt = f"Kontext:\n\n{context_text}\n\n---\n\nFrage: {message}"
-        answer = await azure_openai.chat_completion(chat_endpoint, chat_api_key, chat_deploy, system_prompt, user_prompt)
         return web.json_response({"answer": answer, "sources": sources, "actions": []})
     except Exception as e:
         logger.exception("Chat error: %s", e)
@@ -144,8 +149,10 @@ async def handle_sync_onenote(request):
         client_secret = (opts.get("microsoft_client_secret") or "").strip()
         tenant = (opts.get("microsoft_tenant_id") or "common").strip()
         refresh_token = get_refresh_token() or (opts.get("microsoft_refresh_token") or "").strip() or None
-        notebook_id = (opts.get("onenote_notebook_id") or "").strip() or None
-        notebook_name = (opts.get("onenote_notebook_name") or "").strip() or None
+        notebook_id, notebook_name = load_onenote_selection()
+        if notebook_id is None and notebook_name is None:
+            notebook_id = (opts.get("onenote_notebook_id") or "").strip() or None
+            notebook_name = (opts.get("onenote_notebook_name") or "").strip() or None
         logger.info("OneNote-Sync per API aufgerufen (Notizbuch-ID: %s, Name: %s)", notebook_id or "alle", notebook_name or "-")
         if not client_id or not client_secret:
             return web.json_response({"error": "Microsoft Client-ID/Secret fehlt"}, status=400)
@@ -186,8 +193,10 @@ async def handle_onenote_status(request):
         client_secret = (opts.get("microsoft_client_secret") or "").strip()
         tenant = (opts.get("microsoft_tenant_id") or "common").strip()
         refresh_token = get_refresh_token() or (opts.get("microsoft_refresh_token") or "").strip() or None
-        notebook_id = (opts.get("onenote_notebook_id") or "").strip() or None
-        notebook_name = (opts.get("onenote_notebook_name") or "").strip() or None
+        notebook_id, notebook_name = load_onenote_selection()
+        if notebook_id is None and notebook_name is None:
+            notebook_id = (opts.get("onenote_notebook_id") or "").strip() or None
+            notebook_name = (opts.get("onenote_notebook_name") or "").strip() or None
         async with ClientSession() as session:
             ok, message, notebooks, configured_found, configured_name = await onenote_sync.check_onenote_access(
                 tenant, client_id, client_secret, refresh_token, session,
@@ -203,6 +212,20 @@ async def handle_onenote_status(request):
     except Exception as e:
         logger.exception("OneNote-Status error: %s", e)
         return web.json_response({"success": False, "message": str(e), "notebooks": [], "configured_notebook_found": None, "configured_notebook_name": None}, status=500)
+
+
+async def handle_onenote_notebook(request):
+    """Speichert die gewählte Notizbuch-Auswahl. POST /api/onenote_notebook Body: { notebook_id, notebook_name }"""
+    try:
+        body = await request.json() or {}
+        notebook_id = (body.get("notebook_id") or "").strip() or None
+        notebook_name = (body.get("notebook_name") or "").strip() or None
+        save_onenote_selection(notebook_id or "", notebook_name or "")
+        logger.info("OneNote-Auswahl gespeichert: id=%s name=%s", notebook_id or "-", notebook_name or "-")
+        return web.json_response({"ok": True, "notebook_id": notebook_id, "notebook_name": notebook_name})
+    except Exception as e:
+        logger.exception("OneNote notebook save error: %s", e)
+        return web.json_response({"error": str(e)}, status=500)
 
 
 async def handle_execute_action(request):
@@ -271,9 +294,11 @@ def create_app():
     app.router.add_route("OPTIONS", "/api/execute_action", handle_options)
     app.router.add_route("OPTIONS", "/api/add_documents", handle_options)
     app.router.add_route("OPTIONS", "/api/onenote_status", handle_options)
+    app.router.add_route("OPTIONS", "/api/onenote_notebook", handle_options)
     app.router.add_post("/api/chat", handle_chat)
     app.router.add_post("/api/sync_onenote", handle_sync_onenote)
     app.router.add_get("/api/onenote_status", handle_onenote_status)
+    app.router.add_post("/api/onenote_notebook", handle_onenote_notebook)
     app.router.add_post("/api/execute_action", handle_execute_action)
     app.router.add_post("/api/add_documents", handle_add_documents)
     www = Path(__file__).parent / "www"

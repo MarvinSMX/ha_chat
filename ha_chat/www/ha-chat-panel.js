@@ -22,8 +22,24 @@
       .input-row button { padding: 10px 20px; cursor: pointer; background: #0d47a1; color: #fff; border: none; border-radius: 4px; }
       .error { color: #ff8a80; margin: 8px 0; }
       .loading { opacity: 0.7; pointer-events: none; }
+      .onenote-card { background: #2d2d2d; border: 1px solid #444; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+      .onenote-card h3 { margin: 0 0 8px 0; font-size: 1em; }
+      .onenote-card button { padding: 6px 12px; margin-right: 8px; margin-bottom: 4px; cursor: pointer; background: #0d47a1; color: #fff; border: none; border-radius: 4px; }
+      .onenote-card button.secondary { background: #555; }
+      .onenote-list { list-style: none; padding: 0; margin: 8px 0 0 0; max-height: 200px; overflow-y: auto; }
+      .onenote-list li { padding: 6px 8px; margin: 4px 0; background: #1c1c1c; border-radius: 4px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+      .onenote-list li label { flex: 1; cursor: pointer; }
+      .onenote-current { font-size: 0.9em; color: #82b1ff; margin-top: 8px; }
+      .onenote-msg { font-size: 0.85em; margin-top: 6px; color: #aaa; }
     </style>
     <div class="container">
+      <div class="onenote-card">
+        <h3>OneNote – Notizbuch für Sync</h3>
+        <button id="loadNotebooks">Notizbücher laden</button>
+        <div id="onenoteMsg" class="onenote-msg" style="display:none;"></div>
+        <div id="onenoteCurrent" class="onenote-current" style="display:none;"></div>
+        <ul id="onenoteList" class="onenote-list" style="display:none;"></ul>
+      </div>
       <div class="thread" id="thread"></div>
       <div class="input-row">
         <input type="text" id="input" placeholder="Frage stellen..." />
@@ -50,6 +66,8 @@
       var input = this.shadowRoot.getElementById('input');
       sendBtn.addEventListener('click', function () { this._send(); }.bind(this));
       input.addEventListener('keydown', function (e) { if (e.key === 'Enter') this._send(); }.bind(this));
+      var loadBtn = this.shadowRoot.getElementById('loadNotebooks');
+      if (loadBtn) loadBtn.addEventListener('click', function () { this._loadNotebooks(); }.bind(this));
     }
 
     _addMessage(role, content, extra) {
@@ -95,6 +113,73 @@
       var errEl = this.shadowRoot.getElementById('error');
       errEl.textContent = msg;
       errEl.style.display = 'block';
+    }
+
+    _loadNotebooks() {
+      var self = this;
+      var msgEl = this.shadowRoot.getElementById('onenoteMsg');
+      var listEl = this.shadowRoot.getElementById('onenoteList');
+      var currentEl = this.shadowRoot.getElementById('onenoteCurrent');
+      msgEl.style.display = 'block';
+      msgEl.textContent = 'Lade …';
+      listEl.style.display = 'none';
+      listEl.innerHTML = '';
+      fetch(apiBase() + '/api/onenote_status')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          msgEl.textContent = data.success ? (data.message || '') : (data.message || 'Fehler');
+          if (data.notebooks && data.notebooks.length) {
+            listEl.style.display = 'block';
+            data.notebooks.forEach(function (nb) {
+              var li = document.createElement('li');
+              var id = nb.id || '';
+              var name = nb.displayName || nb.name || id || 'Unbenannt';
+              li.innerHTML = '<label>' + escapeHtml(name) + '</label><button type="button" class="secondary" data-id="' + escapeHtml(id) + '" data-name="' + escapeHtml(name) + '">Dieses Notizbuch für Sync verwenden</button>';
+              li.querySelector('button').addEventListener('click', function () {
+                self._setNotebook(this.dataset.id, this.dataset.name);
+              });
+              listEl.appendChild(li);
+            });
+          }
+          if (data.configured_notebook_name) {
+            currentEl.style.display = 'block';
+            currentEl.textContent = 'Aktuell für Sync: ' + data.configured_notebook_name;
+          } else if (data.success && data.notebooks && data.notebooks.length === 0) {
+            currentEl.style.display = 'block';
+            currentEl.textContent = 'Keine Notizbücher gefunden.';
+          } else {
+            currentEl.style.display = 'none';
+          }
+        })
+        .catch(function (e) {
+          msgEl.textContent = 'Fehler: ' + (e.message || String(e));
+        });
+    }
+
+    _setNotebook(notebookId, notebookName) {
+      var self = this;
+      var msgEl = this.shadowRoot.getElementById('onenoteMsg');
+      var currentEl = this.shadowRoot.getElementById('onenoteCurrent');
+      msgEl.style.display = 'block';
+      msgEl.textContent = 'Speichere …';
+      fetch(apiBase() + '/api/onenote_notebook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notebook_id: notebookId, notebook_name: notebookName })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.error) {
+            msgEl.textContent = 'Fehler: ' + data.error;
+          } else {
+            msgEl.textContent = 'Gespeichert.';
+            currentEl.style.display = 'block';
+            currentEl.textContent = 'Aktuell für Sync: ' + (notebookName || notebookId || '');
+          }
+        })
+        .catch(function (e) {
+          msgEl.textContent = 'Fehler: ' + (e.message || String(e));
+        });
     }
 
     _send() {
