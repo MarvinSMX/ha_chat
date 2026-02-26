@@ -1,5 +1,5 @@
 /**
- * HA OneNote RAG Chat – läuft in der Add-on-App (Port 8765).
+ * HA OneNote RAG Chat – läuft in der Add-on-App (Ingress oder Port 8765).
  * Nutzt relative API: /api/chat, /api/execute_action.
  */
 (function () {
@@ -63,13 +63,22 @@
         throw new Error(msg);
       });
     }
-    return r.json().then(function (data) {
-      if (!r.ok) {
-        var err = (data && data.error) || (r.status ? 'HTTP ' + r.status : 'Fehler');
-        throw new Error(err);
-      }
-      return data;
-    });
+    return r.text()
+      .then(function (text) {
+        var data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          var msg = r.status ? 'HTTP ' + r.status : 'Antwort ist kein JSON';
+          if (text && text.substring(0, 50).indexOf('<') !== -1) msg += ' (wahrscheinlich Fehlerseite – Add-on/Ingress prüfen)';
+          throw new Error(msg);
+        }
+        if (!r.ok) {
+          var err = (data && data.error) || (r.status ? 'HTTP ' + r.status : 'Fehler');
+          throw new Error(err);
+        }
+        return data;
+      });
   }
 
   class HaChatPanel extends HTMLElement {
