@@ -54,6 +54,24 @@
     return window.location.origin;
   }
 
+  function parseJsonResponse(r) {
+    var ct = (r.headers.get('Content-Type') || '').toLowerCase();
+    if (!ct.includes('application/json')) {
+      return r.text().then(function (text) {
+        var msg = r.status ? 'HTTP ' + r.status : 'Ungültige Antwort';
+        if (text && text.length < 300) msg += ': ' + text;
+        throw new Error(msg);
+      });
+    }
+    return r.json().then(function (data) {
+      if (!r.ok) {
+        var err = (data && data.error) || (r.status ? 'HTTP ' + r.status : 'Fehler');
+        throw new Error(err);
+      }
+      return data;
+    });
+  }
+
   class HaChatPanel extends HTMLElement {
     constructor() {
       super();
@@ -126,7 +144,7 @@
       listEl.style.display = 'none';
       listEl.innerHTML = '';
       fetch(apiBase() + '/api/onenote_status')
-        .then(function (r) { return r.json(); })
+        .then(function (r) { return parseJsonResponse(r); })
         .then(function (data) {
           msgEl.textContent = data.success ? (data.message || '') : (data.message || 'Fehler');
           if (data.notebooks && data.notebooks.length) {
@@ -168,7 +186,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notebook_id: notebookId, notebook_name: notebookName })
       })
-        .then(function (r) { return r.json(); })
+        .then(function (r) { return parseJsonResponse(r); })
         .then(function (data) {
           if (data.error) {
             msgEl.textContent = 'Fehler: ' + data.error;
@@ -199,7 +217,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text })
       })
-        .then(function (r) { return r.json(); })
+        .then(function (r) { return parseJsonResponse(r); })
         .then(function (data) {
           if (data.error) {
             self._showError(data.error);
@@ -213,7 +231,7 @@
         })
         .catch(function (e) {
           self._showError('Fehler: ' + (e.message || String(e)));
-          self._addMessage('assistant', 'Verbindung zur App fehlgeschlagen. App läuft auf Port 8765.');
+          self._addMessage('assistant', 'Verbindung zur App fehlgeschlagen. Add-on-Log prüfen oder Seite neu laden.');
         })
         .finally(function () {
           container.classList.remove('loading');
@@ -233,7 +251,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ utterance: utterance })
       })
-        .then(function (r) { return r.json(); })
+        .then(function (r) { return parseJsonResponse(r); })
         .then(function (data) {
           if (data.error) {
             self._showError(data.error);
