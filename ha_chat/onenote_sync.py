@@ -200,6 +200,19 @@ async def fetch_pages(access_token: str, session, notebook_id: Optional[str] = N
             for sg in section_groups:
                 await collect_sections_from_section_group(sg)
 
+        # Fallback: Bei manchen Konten liefern sectionsUrl/sectionGroupsUrl 0 – dann alle Abschnitte holen und nach Notizbuch filtern
+        if len(all_sections) == 0:
+            logger.info("OneNote: Keine Abschnitte über Notizbuch-URLs – Fallback: GET /me/onenote/sections, Filter parentNotebook.id")
+            all_sections_response = await _fetch_all(
+                "https://graph.microsoft.com/v1.0/me/onenote/sections?$expand=parentNotebook",
+                access_token, session,
+            )
+            all_sections.extend(
+                s for s in all_sections_response
+                if (s.get("parentNotebook") or {}).get("id") == target_id
+            )
+            logger.info("OneNote: %d Abschnitte nach Fallback (von %d gesamt)", len(all_sections), len(all_sections_response))
+
         logger.info("OneNote: Insgesamt %d Abschnitte (direkt + in Section Groups)", len(all_sections))
 
         pages = []
