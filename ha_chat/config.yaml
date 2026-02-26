@@ -1,6 +1,6 @@
-name: "HA Chat (N8N)"
-description: "Chat-Frontend mit N8N Inference-Webhook. Embedding/RAG vollständig in N8N."
-version: "1.0.30"
+name: "HA Chat (OneNote RAG)"
+description: "Sidebar-Chat mit RAG über OneNote, ChromaDB und Azure OpenAI. Keine Integration nötig."
+version: "1.0.31"
 slug: "ha_chat"
 init: false
 arch:
