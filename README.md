@@ -44,10 +44,18 @@ addons/
 ## Schritt 3: Chat nutzen
 
 - **Im Browser:** `http://homeassistant.local:8765` (oder deine HA-Host-Adresse mit Port **8765**) öffnen – dort läuft die Chat-UI der App.
-- **Als Sidebar-Panel in HA:**  
-  Wenn du die Oberfläche weiter in HA haben willst, kannst du ein **panel_custom** mit einer iframe-URL auf die App setzen, z. B.  
-  `url: http://homeassistant.local:8765`  
-  (Details siehe [frontend/README.md](../frontend/README.md).)
+- **Als Panel in HA:** In `configuration.yaml` ein **panel_custom** mit iframe auf die App setzen, z. B.:
+  ```yaml
+  panel_custom:
+    - name: ha-chat
+      sidebar_title: Chat
+      sidebar_icon: mdi:chat
+      url_path: ha-chat
+      embed_iframe: true
+      config:
+        url: http://homeassistant.local:8765
+  ```
+  Dann unter **Einstellungen** → **Dashboards** → **Sidebar** das Panel „Chat“ aktivieren.
 
 ## API (für Automationen / andere Aufrufer)
 
@@ -59,10 +67,13 @@ addons/
 ## OneNote-Sync
 
 - In den App-Optionen **Microsoft Client-ID**, **Client-Secret** und ggf. **Tenant-ID** eintragen.
-- **Nur ein bestimmtes Notizbuch synchronisieren (optional):**
-  - **OneNote Notizbuch-ID:** ID des Notizbuchs (aus der Graph-API oder URL). Wenn gesetzt, wird nur dieses Notizbuch geholt.
-  - **OneNote Notizbuch-Name:** Anzeigename des Notizbuchs (exakter oder Teil-Treffer). Wird nur ausgewertet, wenn keine Notizbuch-ID gesetzt ist.  
-  Beide leer = alle Notizbücher wie bisher.
+- **Notizbuch in der Weboberfläche wählen (empfohlen):**
+  - Im Browser `http://<dein-ha>:8765` öffnen.
+  - **Oben** auf der Seite siehst du den Bereich **„OneNote – Notizbuch für Sync“**.
+  - Auf **„Notizbücher laden“** klicken (Microsoft-Anmeldung muss einmal erfolgt sein). Es erscheinen deine OneNote-Notizbücher.
+  - Beim gewünschten Notizbuch auf **„Dieses Notizbuch für Sync verwenden“** klicken – diese Auswahl wird gespeichert und beim nächsten Sync verwendet.
+  - **Hinweis:** Siehst du den OneNote-Bereich nicht, Add-on einmal **neu starten** (oder neu bauen) und im Browser **Cache leeren** (Strg+Shift+R bzw. Hard Refresh).
+- **Alternativ in den App-Optionen:** OneNote Notizbuch-ID oder Notizbuch-Name eintragen (wird nur genutzt, wenn in der UI nichts gewählt wurde).
 - Einmalig **POST** `http://homeassistant.local:8765/api/sync_onenote` auslösen (z. B. Browser, curl oder Automation).  
   Beim ersten Mal erscheint im **App-Log** (Einstellungen → Apps → HA Chat → Logs) eine URL und ein Code – diese URL im Browser öffnen, Code eingeben. Danach speichert die App den Refresh-Token und weitere Syncs laufen ohne erneute Anmeldung.
 - Sync wiederholen: z. B. Automation mit Zeitplan, die periodisch `POST .../api/sync_onenote` aufruft.
@@ -70,4 +81,4 @@ addons/
 ## Hinweise
 
 - ChromaDB-Daten und (nach erstem Sync) der Microsoft Refresh-Token liegen unter `/data` im Container (persistent).
-- Die **Integration** unter `custom_components/ha_chat/` wird von dieser App **nicht** genutzt; du kannst sie entfernen, wenn du nur die App verwenden willst.
+- **Nur dieses Add-on wird gepflegt.** Custom Integration und separates Frontend-Panel gehören nicht zum Projektumfang.

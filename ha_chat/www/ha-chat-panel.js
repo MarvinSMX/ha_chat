@@ -22,7 +22,7 @@
       .input-row button { padding: 10px 20px; cursor: pointer; background: #0d47a1; color: #fff; border: none; border-radius: 4px; }
       .error { color: #ff8a80; margin: 8px 0; }
       .loading { opacity: 0.7; pointer-events: none; }
-      .onenote-card { background: #2d2d2d; border: 1px solid #444; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+      .onenote-card { background: #2d2d2d; border: 1px solid #444; border-radius: 8px; padding: 12px; margin-bottom: 12px; flex-shrink: 0; }
       .onenote-card h3 { margin: 0 0 8px 0; font-size: 1em; }
       .onenote-card button { padding: 6px 12px; margin-right: 8px; margin-bottom: 4px; cursor: pointer; background: #0d47a1; color: #fff; border: none; border-radius: 4px; }
       .onenote-card button.secondary { background: #555; }
@@ -35,6 +35,7 @@
     <div class="container">
       <div class="onenote-card">
         <h3>OneNote – Notizbuch für Sync</h3>
+        <p class="onenote-msg" style="margin:0 0 8px 0; font-size:0.9em; color:#aaa;">Wähle das Notizbuch, das beim Sync in die Wissensbasis übernommen werden soll.</p>
         <button id="loadNotebooks">Notizbücher laden</button>
         <div id="onenoteMsg" class="onenote-msg" style="display:none;"></div>
         <div id="onenoteCurrent" class="onenote-current" style="display:none;"></div>
