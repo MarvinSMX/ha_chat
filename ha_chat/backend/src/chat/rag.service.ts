@@ -1,5 +1,5 @@
 import { AzureOpenAI } from 'openai';
-import { getOptions, getEmbeddingConfig, getChatConfig } from '../config/options';
+import { getOptions, getEmbeddingConfig, getChatConfig, getRagConfig } from '../config/options';
 import * as chromaService from './chroma.service';
 
 export interface ChatResponse {
@@ -45,33 +45,49 @@ export class RagService {
     return res.data[0]?.embedding ?? [];
   }
 
-  async chat(systemPrompt: string, userMessage: string): Promise<string> {
+  async chat(systemPrompt: string, userMessage: string, temperature?: number): Promise<string> {
     const client = this.getChatClient();
     if (!client) throw new Error('Azure Chat nicht konfiguriert');
     const opts = getOptions();
     const cfg = getChatConfig(opts);
+    const ragCfg = getRagConfig(opts);
+    const temp = temperature ?? ragCfg.temperature;
     const res = await client.chat.completions.create({
       model: cfg.deployment,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage },
       ],
-      temperature: 1,
+      temperature: temp,
     });
     return (res.choices[0]?.message?.content ?? '').trim();
   }
 
-  async runRag(message: string, k = 8): Promise<ChatResponse> {
+  async runRag(message: string, k?: number): Promise<ChatResponse> {
+    const opts = getOptions();
+    const topK = k ?? getRagConfig(opts).topK;
+    const { scoreThreshold, temperature } = getRagConfig(opts);
+
     const queryEmbedding = await this.getEmbedding(message);
-    const results = await chromaService.query(queryEmbedding, k);
+    const results = await chromaService.query(queryEmbedding, topK);
 
     const docs = results.documents[0] ?? [];
     const metas = results.metadatas[0] ?? [];
+    const distances = results.distances[0] ?? [];
 
+    // Cosine-Distanz (Chroma) → Similarity-Score 0–1: score = 1 - distance (clamp)
+    const withScores = docs.map((doc, i) => ({
+      doc,
+      meta: metas[i] ?? {},
+      score: Math.min(1, Math.max(0, 1 - (distances[i] ?? 1))),
+    }));
+
+    const filtered =
+      scoreThreshold > 0 ? withScores.filter((x) => x.score >= scoreThreshold) : withScores;
     const contextStr =
-      docs.length === 0
+      filtered.length === 0
         ? '(Keine passenden Dokumente gefunden.)'
-        : docs.map((d, i) => `[${i + 1}] ${d}`).join('\n\n');
+        : filtered.map((x, i) => `[${i + 1}] ${x.doc}`).join('\n\n');
 
     const systemPrompt =
       'Du bist ein hilfreicher Assistent mit Zugriff auf die Wissensbasis des Nutzers. ' +
@@ -81,12 +97,12 @@ export class RagService {
       'Erfinde nichts; wenn der Kontext nichts Relevantes enthält, sag das.';
 
     const userPrompt = `Kontext:\n\n${contextStr}\n\n---\n\nFrage: ${message}`;
-    const answer = await this.chat(systemPrompt, userPrompt);
+    const answer = await this.chat(systemPrompt, userPrompt, temperature);
 
-    const sources = metas.map((m: Record<string, unknown>, i: number) => ({
-      title: (m.title ?? m.section ?? `Quelle ${i + 1}`) as string,
-      url: (m.url ?? '') as string,
-      score: 1,
+    const sources = filtered.map((x, i) => ({
+      title: (x.meta.title ?? x.meta.section ?? `Quelle ${i + 1}`) as string,
+      url: ((x.meta.url as string) ?? '').trim(),
+      score: Math.round(x.score * 100) / 100,
     }));
 
     return { answer, sources, actions: [] };

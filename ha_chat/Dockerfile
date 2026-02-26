@@ -31,5 +31,6 @@ RUN chmod +x /run.sh
 ENV FRONTEND_DIST=/app/frontend/dist
 ENV CHROMA_URL=http://127.0.0.1:8000
 ENV NODE_ENV=production
+ENV NODE_OPTIONS=--max-old-space-size=2048
 EXPOSE 8099
 CMD ["/run.sh"]

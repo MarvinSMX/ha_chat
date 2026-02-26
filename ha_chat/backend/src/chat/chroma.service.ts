@@ -42,7 +42,14 @@ export async function query(
       include: ['documents', 'metadatas', 'distances'],
     }),
   });
-  const data = await res.json();
+  const text = await res.text();
+  if (!text.trim()) return { documents: [[]], metadatas: [[]], distances: [[]] };
+  let data: { documents?: string[][]; metadatas?: Record<string, unknown>[][]; distances?: number[][] };
+  try {
+    data = JSON.parse(text) as typeof data;
+  } catch {
+    return { documents: [[]], metadatas: [[]], distances: [[]] };
+  }
   return {
     documents: data.documents ?? [[]],
     metadatas: data.metadatas ?? [[]],

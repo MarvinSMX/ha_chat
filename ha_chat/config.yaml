@@ -33,6 +33,10 @@ options:
   onenote_notebook_name: ""
   ha_url: ""
   ha_token: ""
+  # RAG: Top-k (Anzahl Chunks), Temperature (0–1), Score-Schwelle (0–1, 0=aus)
+  rag_top_k: "8"
+  rag_temperature: "0.5"
+  rag_score_threshold: "0"
 schema:
   azure_endpoint: str
   azure_api_key: str
@@ -49,3 +53,6 @@ schema:
   onenote_notebook_name: str
   ha_url: str
   ha_token: str
+  rag_top_k: str
+  rag_temperature: str
+  rag_score_threshold: str

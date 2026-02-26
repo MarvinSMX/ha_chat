@@ -11,7 +11,7 @@ const DATA_DIR = process.env.DATA_DIR || '/data';
 const ONENOTE_SELECTION_PATH = join(DATA_DIR, 'onenote_selection.json');
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 /** Max. Chunks pro Batch – reduziert Speicherverbrauch (vermeidet Heap OOM bei großen Notizbüchern) */
-const SYNC_BATCH_SIZE = 80;
+const SYNC_BATCH_SIZE = 30;
 
 async function graphFetch<T>(url: string, accessToken: string, key: string = 'value'): Promise<T[]> {
   const out: T[] = [];
@@ -21,7 +21,14 @@ async function graphFetch<T>(url: string, accessToken: string, key: string = 'va
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!res.ok) throw new Error(`Graph: ${res.status} ${res.statusText}`);
-    const data = (await res.json()) as { [k: string]: unknown };
+    const text = await res.text();
+    if (!text.trim()) throw new Error('Graph: leere Antwort (Unexpected end of JSON input)');
+    let data: { [k: string]: unknown };
+    try {
+      data = JSON.parse(text) as { [k: string]: unknown };
+    } catch {
+      throw new Error('Graph: ungültiges JSON (Unexpected end of JSON input?)');
+    }
     const list = data[key];
     if (Array.isArray(list)) out.push(...(list as T[]));
     next = (data['@odata.nextLink'] as string)?.trim() || null;
@@ -262,6 +269,10 @@ export class OnenoteService {
     return res.ok ? await res.text() : '';
   }
 
+  /**
+   * Sync section-weise: pro Abschnitt Seiten holen, verarbeiten, in Chroma schreiben.
+   * Hält nie alle Seiten im Speicher – reduziert Heap-OOM bei großen Notizbüchern.
+   */
   async runSync(): Promise<{ documents_added?: number; error?: string }> {
     const opts = getOptions();
     const clientId = (opts.microsoft_client_id ?? '').trim();
@@ -279,8 +290,61 @@ export class OnenoteService {
     const notebookName = (opts.onenote_notebook_name ?? sel.notebook_name ?? '').trim() || undefined;
 
     try {
-      const pages = await this.fetchAllPages(accessToken, notebookId, notebookName);
-      if (pages.length === 0) return { documents_added: 0 };
+      const collectSectionsFromGroup = async (sg: GraphSection, token: string): Promise<GraphSection[]> => {
+        const acc: GraphSection[] = [];
+        const sgId = sg.id;
+        if (!sgId) return acc;
+        const secUrl = (sg.sectionsUrl ?? '').trim() || `${GRAPH_BASE}/me/onenote/sectionGroups/${sgId}/sections`;
+        const secs = await graphFetch<GraphSection>(secUrl, token);
+        acc.push(...secs);
+        const childUrl = (sg.sectionGroupsUrl ?? '').trim() || `${GRAPH_BASE}/me/onenote/sectionGroups/${sgId}/sectionGroups`;
+        const childGroups = await graphFetch<GraphSection>(childUrl, token);
+        for (const c of childGroups) {
+          acc.push(...(await collectSectionsFromGroup(c, token)));
+        }
+        return acc;
+      };
+
+      let allSections: GraphSection[] = [];
+      let nbDisplayName = '';
+
+      if (notebookId?.trim() || notebookName?.trim()) {
+        const notebooks = await graphFetch<GraphNotebook>(`${GRAPH_BASE}/me/onenote/notebooks`, accessToken);
+        const nb = notebookId?.trim()
+          ? notebooks.find((n) => (n.id ?? '') === notebookId.trim()) ?? null
+          : notebooks.find(
+              (n) =>
+                (n.displayName ?? '').trim().toLowerCase() === (notebookName ?? '').trim().toLowerCase() ||
+                (n.displayName ?? '').toLowerCase().includes((notebookName ?? '').trim().toLowerCase())
+            ) ?? null;
+        if (!nb?.id) return { documents_added: 0 };
+
+        nbDisplayName = nb.displayName ?? '';
+        const sectionsUrl = (nb.sectionsUrl ?? '').trim();
+        if (sectionsUrl) {
+          const direct = await graphFetch<GraphSection>(sectionsUrl, accessToken);
+          allSections.push(...direct);
+        }
+        const sectionGroupsUrl = (nb.sectionGroupsUrl ?? '').trim();
+        if (sectionGroupsUrl) {
+          const groups = await graphFetch<GraphSection>(sectionGroupsUrl, accessToken);
+          for (const sg of groups) {
+            allSections.push(...(await collectSectionsFromGroup(sg, accessToken)));
+          }
+        }
+        if (allSections.length === 0) {
+          const allSec = await graphFetch<GraphSection>(
+            `${GRAPH_BASE}/me/onenote/sections?$expand=parentNotebook`,
+            accessToken
+          );
+          allSections = allSec.filter((s) => (s.parentNotebook?.id ?? '') === nb.id);
+        }
+      } else {
+        allSections = await graphFetch<GraphSection>(
+          `${GRAPH_BASE}/me/onenote/sections?$expand=parentNotebook`,
+          accessToken
+        );
+      }
 
       let totalAdded = 0;
       let batchIds: string[] = [];
@@ -300,35 +364,44 @@ export class OnenoteService {
         batchMetas = [];
       };
 
-      for (const page of pages) {
-        const pageId = page.id ?? '';
-        const title = (page.title ?? '').replace(/\n/g, ' ').trim() || 'Untitled';
-        const section = page.parentSection?.displayName ?? '';
-        const notebook = page.parentSection?.parentNotebook?.displayName ?? '';
-        const lastModified = page.lastModifiedDateTime ?? '';
-        const links = page.links ?? {};
-        const url =
-          (links as { oneNoteWebUrl?: { href?: string }; oneNoteClientUrl?: { href?: string } }).oneNoteWebUrl?.href ??
-          (links as { oneNoteWebUrl?: { href?: string }; oneNoteClientUrl?: { href?: string } }).oneNoteClientUrl?.href ??
-          '';
+      for (const sec of allSections) {
+        const secId = sec.id;
+        if (!secId) continue;
+        const sectionPages = await graphFetch<GraphPage>(
+          `${GRAPH_BASE}/me/onenote/sections/${secId}/pages`,
+          accessToken
+        );
+        const sectionDisplayName = sec.displayName ?? '';
+        const notebookNameForPage = nbDisplayName || (sec.parentNotebook?.displayName ?? '');
 
-        const html = await this.fetchPageContent(pageId, accessToken);
-        const text = htmlToText(html);
-        const chunks = chunkText(text);
+        for (const page of sectionPages) {
+          const pageId = page.id ?? '';
+          const title = (page.title ?? '').replace(/\n/g, ' ').trim() || 'Untitled';
+          const lastModified = page.lastModifiedDateTime ?? '';
+          const links = page.links ?? {};
+          const url =
+            (links as { oneNoteWebUrl?: { href?: string }; oneNoteClientUrl?: { href?: string } }).oneNoteWebUrl?.href ??
+            (links as { oneNoteWebUrl?: { href?: string }; oneNoteClientUrl?: { href?: string } }).oneNoteClientUrl?.href ??
+            '';
 
-        for (const { text: chunkTextVal, index: chunkIdx } of chunks) {
-          batchIds.push(`${pageId}_${chunkIdx}`);
-          batchDocs.push(chunkTextVal);
-          batchMetas.push({
-            pageId,
-            chunkIndex: chunkIdx,
-            title,
-            section,
-            notebook,
-            lastModified,
-            url,
-          });
-          if (batchDocs.length >= SYNC_BATCH_SIZE) await flushBatch();
+          const html = await this.fetchPageContent(pageId, accessToken);
+          const text = htmlToText(html);
+          const chunks = chunkText(text);
+
+          for (const { text: chunkTextVal, index: chunkIdx } of chunks) {
+            batchIds.push(`${pageId}_${chunkIdx}`);
+            batchDocs.push(chunkTextVal);
+            batchMetas.push({
+              pageId,
+              chunkIndex: chunkIdx,
+              title,
+              section: sectionDisplayName,
+              notebook: notebookNameForPage,
+              lastModified,
+              url,
+            });
+            if (batchDocs.length >= SYNC_BATCH_SIZE) await flushBatch();
+          }
         }
       }
 

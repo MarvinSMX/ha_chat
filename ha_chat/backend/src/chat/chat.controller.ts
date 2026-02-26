@@ -22,7 +22,7 @@ export class ChatController {
       return { error: 'Azure OpenAI (Chat/LLM) nicht konfiguriert' };
     }
     try {
-      const result = await this.rag.runRag(message, 8);
+      const result = await this.rag.runRag(message);
       return result;
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e);
