@@ -79,7 +79,9 @@ addons/
   ============================================================
   ```
   **Vorgehen:** Diese URL im Browser öffnen, Code eingeben, mit deinem Microsoft-Konto anmelden. Die App wartet bis zu 5 Minuten und speichert danach den Refresh-Token; weitere Syncs laufen ohne erneute Anmeldung.
-- **Fehler AADSTS7000218** („client_secret“ fehlt): Stelle sicher, dass in den App-Optionen das **Client-Secret** aus der Azure-App-Registrierung eingetragen ist. Falls der Fehler bleibt: In Azure unter **Authentifizierung** → **Erweiterte Einstellungen** „Öffentliche Clientflows zulassen“ auf **Ja** setzen.
+- **Fehler AADSTS7000218** („client_secret“ fehlt):  
+  - Stelle sicher, dass in den App-Optionen das **Client-Secret** aus der Azure-App-Registrierung eingetragen ist (Zertifikate & Geheimnisse → Geheimnis erstellen → Wert kopieren).  
+  - **Alternative:** In Azure unter **Authentifizierung** → **Erweiterte Einstellungen** die Option **„Öffentliche Clientflows zulassen“** auf **Ja** setzen. Dann wird beim Device Flow kein Secret benötigt – die App versucht nach einem Fehler automatisch die Anmeldung ohne Secret.
 - **Notizbuch in der Weboberfläche wählen (empfohlen):**
   - Im Browser `http://<dein-ha>:8765` öffnen.
   - **Oben** auf der Seite den Bereich **„OneNote – Notizbuch für Sync“** → **„Notizbücher laden“** (nach erfolgter Anmeldung erscheinen deine Notizbücher).

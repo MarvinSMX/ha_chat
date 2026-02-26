@@ -82,6 +82,7 @@ async def get_token_via_device_flow(
     print("  (Gültig ca. 15 Min. – Warte auf deine Anmeldung …)")
     print("=" * 60 + "\n")
     logger.info("OneNote Device Flow: Öffne %s und gib ein: %s (Warte bis zu 5 Min. auf Anmeldung)", verification_uri, user_code)
+    logger.info("OneNote Device Flow: client_secret gesetzt (Länge %d Zeichen)", len(client_secret))
     token_url = f"{base}/token"
     body = urllib.parse.urlencode({
         "client_id": client_id,
@@ -89,11 +90,14 @@ async def get_token_via_device_flow(
         "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
         "device_code": device_code,
     })
+    body_bytes = body.encode("utf-8")
+    tried_public_client = False
     for i in range(60):
         await asyncio.sleep(5)
+        # Zuerst mit client_secret (vertraulicher Client)
         async with session.post(
             token_url,
-            data=body,
+            data=body_bytes,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         ) as tok_resp:
             resp_body = await tok_resp.text()
@@ -109,6 +113,31 @@ async def get_token_via_device_flow(
         err = tok_data.get("error")
         if err == "authorization_pending":
             continue
+        # 401 invalid_client: einmal ohne client_secret versuchen (öffentlicher Client)
+        if status == 401 and err == "invalid_client" and not tried_public_client:
+            tried_public_client = True
+            logger.info("OneNote Device Flow: Erneuter Versuch ohne client_secret (öffentlicher Client)")
+            body_public = urllib.parse.urlencode({
+                "client_id": client_id,
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                "device_code": device_code,
+            })
+            body_public_bytes = body_public.encode("utf-8")
+            async with session.post(
+                token_url,
+                data=body_public_bytes,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            ) as tok2:
+                resp_body = await tok2.text()
+                status = tok2.status
+            try:
+                tok_data = json.loads(resp_body) if resp_body else {}
+            except Exception:
+                tok_data = {}
+            if status == 200 and "access_token" in tok_data:
+                print("  OneNote-Anmeldung erfolgreich (öffentlicher Client).\n")
+                logger.info("OneNote Device Flow: Anmeldung erfolgreich (ohne client_secret)")
+                return (tok_data["access_token"], tok_data.get("refresh_token", ""))
         if status != 200:
             logger.warning("OneNote Device Flow: Token-Antwort %s: %s", status, resp_body[:300])
         logger.warning(
@@ -131,7 +160,7 @@ async def refresh_access_token(
         "refresh_token": refresh_token,
         "scope": GRAPH_SCOPES,
     })
-    async with session.post(url, data=body, headers={"Content-Type": "application/x-www-form-urlencoded"}) as resp:
+    async with session.post(url, data=body.encode("utf-8"), headers={"Content-Type": "application/x-www-form-urlencoded"}) as resp:
         if resp.status != 200:
             return None
         data = await resp.json()

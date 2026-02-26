@@ -1,0 +1,57 @@
+# Erhöht bei jedem Push die Patch-Version in addon/ha_chat/ha_chat/config.yaml
+# und erstellt einen Commit (mit [skip ci], damit keine Endlosschleife entsteht).
+name: Bump version
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "addon/**"
+      - ".github/workflows/bump-version.yml"
+
+# Job überspringen, wenn der letzte Commit bereits ein Version-Bump war
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') && !startsWith(github.event.head_commit.message, 'chore: bump version') }}
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump patch version
+        id: bump
+        run: |
+          CONFIG="addon/ha_chat/ha_chat/config.yaml"
+          V=$(grep '^version:' "$CONFIG" | sed -n 's/version: *"\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)".*/\1.\2.\3/p')
+          if [ -z "$V" ]; then
+            echo "Could not parse version from $CONFIG"
+            exit 1
+          fi
+          MAJOR=$(echo "$V" | cut -d. -f1)
+          MINOR=$(echo "$V" | cut -d. -f2)
+          PATCH=$(echo "$V" | cut -d. -f3)
+          PATCH=$((PATCH + 1))
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          sed -i "s/^version: .*/version: \"$NEW_VERSION\"/" "$CONFIG"
+          echo "Bumped version $V -> $NEW_VERSION"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add addon/ha_chat/ha_chat/config.yaml
+          if git diff --staged --quiet; then
+            echo "No version change (already up to date)"
+            exit 0
+          fi
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }} [skip ci]"
+          git push
