@@ -223,6 +223,7 @@
       this.attachShadow({ mode: 'open' });
       this.shadowRoot.appendChild(template.content.cloneNode(true));
       this._thread = [];
+      this._sessionId = 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
     }
 
     connectedCallback() {
@@ -431,7 +432,7 @@
       fetch(apiBase() + '/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, session_id: self._sessionId }),
         signal: controller.signal
       })
         .then(function (r) { clearTimeout(timer); return parseJsonResponse(r); })
@@ -466,7 +467,7 @@
       fetch(apiBase() + '/api/execute_action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ utterance: utterance })
+        body: JSON.stringify({ utterance: utterance, session_id: self._sessionId })
       })
         .then(function (r) { return parseJsonResponse(r); })
         .then(function (d) {
