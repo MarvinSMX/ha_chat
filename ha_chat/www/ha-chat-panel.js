@@ -13,6 +13,8 @@
       .msg.user { background: #009AC7; color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
       .msg.assistant { background: #2d2d2d; border: 1px solid #3a3a3a; border-bottom-left-radius: 4px; }
       .msg .content { white-space: pre-wrap; word-break: break-word; }
+      .msg .content a.content-link { color: #009AC7; text-decoration: none; }
+      .msg .content a.content-link:hover { text-decoration: underline; }
       .sources { margin-top: 10px; font-size: 0.85em; opacity: 0.9; }
       .sources a { color: #009AC7; margin-right: 12px; text-decoration: none; }
       .sources a:hover { text-decoration: underline; }
@@ -135,7 +137,7 @@
         if (m.pending) {
           html = '<div class="content typing"><span class="typing-indicator"><span></span><span></span><span></span></span></div>';
         } else {
-          html = '<div class="content">' + escapeHtml(m.content) + '</div>';
+          html = '<div class="content">' + formatMessageContent(m.content) + '</div>';
           if (m.sources && m.sources.length) {
             html += '<div class="sources">Quellen: ';
             m.sources.forEach(function (s) {
@@ -251,6 +253,35 @@
     var div = document.createElement('div');
     div.textContent = s;
     return div.innerHTML;
+  }
+
+  /** Href-Attribut escapen (Anführungszeichen etc.). */
+  function escapeAttr(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  /**
+   * Nachrichtentext für Anzeige: HTML escapen, aber Markdown-Links [Text](URL) in klickbare Links umwandeln.
+   */
+  function formatMessageContent(text) {
+    if (text == null || text === '') return '';
+    var re = /\[([^\]]*)\]\(([^)]+)\)/g;
+    var out = '';
+    var last = 0;
+    var m;
+    while ((m = re.exec(text)) !== null) {
+      out += escapeHtml(text.slice(last, m.index));
+      out += '<a href="' + escapeAttr(m[2]) + '" target="_blank" rel="noopener" class="content-link">' + escapeHtml(m[1]) + '</a>';
+      last = re.lastIndex;
+    }
+    out += escapeHtml(text.slice(last));
+    return out;
   }
 
   customElements.define('ha-chat-panel', HaChatPanel);
