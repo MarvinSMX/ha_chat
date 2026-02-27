@@ -94,13 +94,13 @@
       /* ── Badges: Links & Entitäten ── */
       .content a.content-link { display: inline-block; color: #fff; background: #009AC7; padding: 1px 10px; border-radius: 12px; text-decoration: none; font-size: 0.83em; margin: 0 2px 2px 0; vertical-align: middle; }
       .content a.content-link:hover { background: #007da3; }
-      .content button.entity-btn { display: inline-flex; align-items: center; gap: 4px; margin: 0 2px 2px 0; padding: 2px 10px; border-radius: 12px; font-size: 0.83em; border: none; cursor: pointer; vertical-align: middle; font-family: inherit; transition: filter .15s; }
-      .content button.entity-btn:hover { filter: brightness(1.12); }
+      .content button.entity-btn { display: inline-block; margin: 0 2px 2px 0; padding: 1px 10px; border-radius: 12px; font-size: 0.83em; border: none; cursor: pointer; vertical-align: middle; font-family: inherit; transition: filter .15s; }
+      .content button.entity-btn:hover { filter: brightness(1.15); }
       .content button.entity-btn:disabled { opacity: 0.55; cursor: not-allowed; }
       .entity-status-only { cursor: default !important; pointer-events: none; opacity: 0.85; }
       .content button.entity-btn.entity-on  { background: #009AC7; color: #fff; }
-      .content button.entity-btn.entity-off { background: #484848; color: #bbb; }
-      .content button.entity-btn.entity-unknown { background: #555; color: #ccc; }
+      .content button.entity-btn.entity-off { background: #3a3a3a; color: #888; }
+      .content button.entity-btn.entity-unknown { background: #2d2d2d; color: #777; }
 
       /* ── Quellen ── */
       .sources { margin-top: 8px; font-size: 0.84em; color: #aaa; }
@@ -111,7 +111,7 @@
       .actions { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
       .actions button { padding: 6px 14px; cursor: pointer; background: transparent; color: #009AC7; border: 1px solid #009AC7; border-radius: 20px; font-size: 0.88em; font-family: inherit; }
       .actions button:hover { background: rgba(0,154,199,.15); }
-      .actions button.entity-btn { display: inline-flex; align-items: center; gap: 4px; }
+      .actions button.entity-btn { display: inline-block; }
       .actions button.entity-btn.entity-on  { background: #009AC7; color: #fff; border-color: #009AC7; }
       .actions button.entity-btn.entity-off { background: transparent; color: #666; border-color: #555; }
       .actions button.entity-btn.entity-unknown { background: transparent; color: #888; border-color: #555; }
@@ -293,17 +293,16 @@
       this.attachShadow({ mode: 'open' });
       this.shadowRoot.appendChild(template.content.cloneNode(true));
       this._thread = [];
+      this._hass = null;
+    }
+
+    set hass(value) {
+      this._hass = value;
+      /* Entity-States beim ersten Setzen und bei Updates sofort auffrischen */
+      this._refreshEntityStates();
     }
 
     connectedCallback() {
-      /* MDI-Font im document.head laden (font-face muss im Light-DOM sein) */
-      if (!document.getElementById('mdi-font-link')) {
-        var link = document.createElement('link');
-        link.id   = 'mdi-font-link';
-        link.rel  = 'stylesheet';
-        link.href = 'https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css';
-        document.head.appendChild(link);
-      }
 
       var self = this;
       var input   = this.shadowRoot.getElementById('input');
@@ -503,57 +502,78 @@
       this._refreshEntityStates();
     }
 
-    /* ── Entity-States laden & Buttons einfärben ───────────────────── */
+    /* ── Entity-States direkt aus hass.states lesen & Buttons einfärben ── */
     _refreshEntityStates() {
-      var root = this.shadowRoot;
-      var ids = [];
+      var root  = this.shadowRoot;
+      var hass  = this._hass;
+      var ids   = [];
       root.querySelectorAll('.entity-btn[data-entity-id]').forEach(function (b) {
         var id = b.dataset.entityId;
         if (id && ids.indexOf(id) < 0) ids.push(id);
       });
       ids.forEach(function (entityId) {
-        fetch(apiBase() + '/api/ha_entity_state?entity_id=' + encodeURIComponent(entityId))
-          .then(function (r) { return r.json().catch(function () { return {}; }); })
-          .then(function (data) {
-            var state  = (data.state || '').toLowerCase();
-            var isOn   = state === 'on' || state === 'open' || state === 'unlocked' || state === 'playing' || state === 'home';
-            var isOff  = state === 'off' || state === 'closed' || state === 'locked' || state === 'idle' || state === 'not_home' || state === 'paused';
-            var stateClass = isOn ? 'entity-on' : isOff ? 'entity-off' : 'entity-unknown';
-            var icon   = (data.icon || 'mdi:circle-outline').replace(/^mdi:/, 'mdi-');
-            root.querySelectorAll('.entity-btn[data-entity-id="' + escapeAttr(entityId) + '"]').forEach(function (btn) {
-              btn.classList.remove('entity-on', 'entity-off', 'entity-unknown');
-              btn.classList.add(stateClass);
-              var old = btn.querySelector('.mdi');
-              if (old) old.remove();
-              var sp = document.createElement('span');
-              sp.className = 'mdi ' + icon;
-              sp.setAttribute('aria-hidden', 'true');
-              btn.insertBefore(sp, btn.firstChild);
-            });
-          });
+        var stateObj = hass && hass.states && hass.states[entityId];
+        if (stateObj) {
+          applyStateClass(entityId, stateObj.state);
+        } else {
+          /* Fallback: addon-Proxy */
+          fetch(apiBase() + '/api/ha_entity_state?entity_id=' + encodeURIComponent(entityId))
+            .then(function (r) { return r.json().catch(function () { return {}; }); })
+            .then(function (data) { applyStateClass(entityId, data.state || ''); });
+        }
       });
+
+      function applyStateClass(entityId, stateRaw) {
+        var state = (stateRaw || '').toLowerCase();
+        var isOn  = state === 'on' || state === 'open' || state === 'unlocked' || state === 'playing' || state === 'home';
+        var isOff = state === 'off' || state === 'closed' || state === 'locked' || state === 'idle' || state === 'not_home' || state === 'paused';
+        var cls   = isOn ? 'entity-on' : isOff ? 'entity-off' : 'entity-unknown';
+        root.querySelectorAll('.entity-btn[data-entity-id="' + escapeAttr(entityId) + '"]').forEach(function (btn) {
+          btn.classList.remove('entity-on', 'entity-off', 'entity-unknown');
+          btn.classList.add(cls);
+        });
+      }
     }
 
-    /* ── HA Service-Aufruf ─────────────────────────────────────────── */
+    /* ── HA Service-Aufruf direkt über hass.callService ───────────── */
     _callHaEntity(entityId, service, clickedBtn) {
       if (!service) return;
       if (clickedBtn) clickedBtn.disabled = true;
       var self = this;
-      fetch(apiBase() + '/api/ha_call', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entity_id: entityId, action: service })
-      })
-        .then(function (r) { return r.json().catch(function () { return {}; }); })
-        .then(function (data) {
-          if (data.error) self._showError(data.error);
-          if (clickedBtn) clickedBtn.disabled = false;
-          self._refreshEntityStates();
+      /* service-Format: "domain.service" (z.B. "light.turn_on") */
+      var parts  = service.split('.');
+      var domain = parts[0];
+      var svc    = parts.slice(1).join('.');
+
+      if (this._hass && this._hass.callService) {
+        /* Direkter Aufruf über HA-Websocket */
+        this._hass.callService(domain, svc, { entity_id: entityId })
+          .then(function () {
+            if (clickedBtn) clickedBtn.disabled = false;
+            self._refreshEntityStates();
+          })
+          .catch(function (e) {
+            self._showError('HA-Aufruf fehlgeschlagen: ' + (e.message || e));
+            if (clickedBtn) clickedBtn.disabled = false;
+          });
+      } else {
+        /* Fallback: addon-Proxy */
+        fetch(apiBase() + '/api/ha_call', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entity_id: entityId, action: service })
         })
-        .catch(function (e) {
-          self._showError('HA-Aufruf fehlgeschlagen: ' + (e.message || e));
-          if (clickedBtn) clickedBtn.disabled = false;
-        });
+          .then(function (r) { return r.json().catch(function () { return {}; }); })
+          .then(function (data) {
+            if (data.error) self._showError(data.error);
+            if (clickedBtn) clickedBtn.disabled = false;
+            self._refreshEntityStates();
+          })
+          .catch(function (e) {
+            self._showError('HA-Aufruf fehlgeschlagen: ' + (e.message || e));
+            if (clickedBtn) clickedBtn.disabled = false;
+          });
+      }
     }
 
     /* ── Fehler ────────────────────────────────────────────────────── */
