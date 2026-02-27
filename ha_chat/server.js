@@ -151,7 +151,9 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ error: 'message fehlt' }));
       return;
     }
-    proxyToN8n(inferenceUrl, { message }, res, 'chat');
+    const payload = { message };
+    if (data.session_id) payload.session_id = String(data.session_id);
+    proxyToN8n(inferenceUrl, payload, res, 'chat');
     return;
   }
 
@@ -271,7 +273,9 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const utterance = (data.utterance || '').trim();
-    proxyToN8n(inferenceUrl, { message: utterance }, res, 'action');
+    const actionPayload = { message: utterance };
+    if (data.session_id) actionPayload.session_id = String(data.session_id);
+    proxyToN8n(inferenceUrl, actionPayload, res, 'action');
     return;
   }
 
