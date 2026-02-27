@@ -13,8 +13,8 @@
       .msg.user { background: #009AC7; color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
       .msg.assistant { background: #2d2d2d; border: 1px solid #3a3a3a; border-bottom-left-radius: 4px; }
       .msg .content { white-space: pre-wrap; word-break: break-word; }
-      .msg .content a.content-link { color: #009AC7; text-decoration: none; }
-      .msg .content a.content-link:hover { text-decoration: underline; }
+      .msg .content a.content-link { display: inline-block; color: #fff; background: #009AC7; padding: 2px 10px; border-radius: 12px; text-decoration: none; font-size: 0.85em; margin: 0 2px 2px 0; vertical-align: baseline; }
+      .msg .content a.content-link:hover { background: #007da3; color: #fff; }
       .sources { margin-top: 10px; font-size: 0.85em; opacity: 0.9; }
       .sources a { color: #009AC7; margin-right: 12px; text-decoration: none; }
       .sources a:hover { text-decoration: underline; }
