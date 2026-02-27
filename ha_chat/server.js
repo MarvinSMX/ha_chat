@@ -18,15 +18,25 @@ const OPTIONS_PATH = path.join(DATA_DIR, 'options.json');
 const WWW_DIR = path.join(__dirname, 'www');
 const PORT = parseInt(process.env.SUPERVISOR_INGRESS_PORT || process.env.PORT || '8099', 10);
 
+const DEFAULT_SUGGESTIONS = [
+  'Was kann ich dich fragen?',
+  'Welche Lichter sind gerade an?',
+  'Zeig mir den Status der Heizung',
+  'Welche Geräte sind aktiv?',
+];
+
 function getOptions() {
-  const empty = { n8n_inference_webhook_url: '', ha_url: '', ha_token: '' };
   try {
     const raw = fs.readFileSync(OPTIONS_PATH, 'utf-8');
     const opts = JSON.parse(raw);
+    const suggestions = Array.isArray(opts.prompt_suggestions) && opts.prompt_suggestions.length
+      ? opts.prompt_suggestions.map(String).filter(Boolean)
+      : DEFAULT_SUGGESTIONS;
     return {
       n8n_inference_webhook_url: (opts.n8n_inference_webhook_url || '').trim().replace(/\/$/, ''),
       ha_url: (opts.ha_url || '').trim().replace(/\/$/, ''),
       ha_token: (opts.ha_token || '').trim(),
+      prompt_suggestions: suggestions,
     };
   } catch (e) {
     if (e.code !== 'ENOENT') console.log('[HA Chat] options.json:', e.message);
@@ -35,6 +45,7 @@ function getOptions() {
     n8n_inference_webhook_url: (process.env.N8N_INFERENCE_WEBHOOK_URL || '').trim().replace(/\/$/, ''),
     ha_url: (process.env.HA_URL || '').trim().replace(/\/$/, ''),
     ha_token: (process.env.HA_TOKEN || '').trim(),
+    prompt_suggestions: DEFAULT_SUGGESTIONS,
   };
 }
 
@@ -105,11 +116,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Config für Frontend (optional)
+  // Config für Frontend
   if (pathname === '/config.json' && req.method === 'GET') {
-    const inferenceUrl = getInferenceUrl();
+    const opts = getOptions();
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ n8n_inference_webhook_url: inferenceUrl }));
+    res.end(JSON.stringify({
+      n8n_inference_webhook_url: opts.n8n_inference_webhook_url,
+      prompt_suggestions: opts.prompt_suggestions,
+    }));
     return;
   }
 
@@ -203,17 +217,20 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const entityId = (data.entity_id || '').trim();
-    const action = (data.action || 'toggle').toLowerCase();
+    const action = (data.action || '').trim();
     if (!entityId || !/^[a-z_]+\.[a-z0-9_]+$/i.test(entityId)) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'entity_id ungültig' }));
       return;
     }
-    const allowed = ['turn_on', 'turn_off', 'toggle'];
-    const service = allowed.includes(action) ? action : 'toggle';
+    if (!action || !/^[a-z0-9_]+$/i.test(action)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'action/service ungültig oder leer' }));
+      return;
+    }
     const domain = entityId.split('.')[0];
-    const urlHa = opts.ha_url + '/api/services/' + domain + '/' + service;
-    console.log('[HA Chat] ha_call ' + entityId + ' → ' + service);
+    const urlHa = opts.ha_url + '/api/services/' + domain + '/' + action;
+    console.log('[HA Chat] ha_call ' + entityId + ' → ' + action);
     fetch(urlHa, {
       method: 'POST',
       headers: {

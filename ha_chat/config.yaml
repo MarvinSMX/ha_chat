@@ -17,7 +17,14 @@ options:
   n8n_inference_webhook_url: ""
   ha_url: ""
   ha_token: ""
+  prompt_suggestions:
+    - "Was kann ich dich fragen?"
+    - "Welche Lichter sind gerade an?"
+    - "Zeig mir den Status der Heizung"
+    - "Welche Geräte sind aktiv?"
 schema:
   n8n_inference_webhook_url: str
   ha_url: str
   ha_token: str
+  prompt_suggestions:
+    - str
