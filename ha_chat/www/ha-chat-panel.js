@@ -133,26 +133,6 @@
       .send-btn:disabled { opacity: .45; cursor: not-allowed; }
       .send-btn svg { width: 19px; height: 19px; }
       .error { color: #ff8a80; margin-top: 8px; font-size: .88em; }
-
-      /* ── Entity-Modal ── */
-      .entity-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 100; display: flex; align-items: center; justify-content: center; }
-      .entity-modal-backdrop.hidden { display: none; }
-      .entity-modal { background: #242424; border: 1px solid #3a3a3a; border-radius: 18px; padding: 24px 24px 20px; min-width: 260px; max-width: 340px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,.5); position: relative; }
-      .entity-modal-close { position: absolute; top: 14px; right: 16px; background: none; border: none; color: #777; font-size: 1.2em; cursor: pointer; line-height: 1; padding: 2px 6px; border-radius: 6px; }
-      .entity-modal-close:hover { color: #e0e0e0; background: #333; }
-      .entity-modal-name { font-size: 1.05em; font-weight: 600; color: #e0e0e0; margin-bottom: 4px; padding-right: 28px; }
-      .entity-modal-id { font-size: 0.78em; color: #666; margin-bottom: 16px; font-family: monospace; }
-      .entity-modal-state { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-      .entity-modal-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-      .entity-modal-dot.entity-on  { background: #009AC7; }
-      .entity-modal-dot.entity-off { background: #555; }
-      .entity-modal-dot.entity-unknown { background: #444; }
-      .entity-modal-state-text { font-size: 1em; color: #ccc; }
-      .entity-modal-attrs { border-top: 1px solid #333; padding-top: 12px; display: flex; flex-direction: column; gap: 5px; max-height: 180px; overflow-y: auto; }
-      .entity-modal-attr { display: flex; justify-content: space-between; gap: 8px; font-size: 0.82em; }
-      .entity-modal-attr-key { color: #777; flex-shrink: 0; }
-      .entity-modal-attr-val { color: #bbb; text-align: right; word-break: break-all; }
-      .entity-modal-loading { color: #666; font-size: 0.9em; text-align: center; padding: 8px 0; }
     </style>
     <div class="container">
       <div class="chat-inner">
@@ -169,15 +149,6 @@
           </div>
           <div id="error" class="error" style="display:none;"></div>
         </div>
-      </div>
-    </div>
-    <div class="entity-modal-backdrop hidden" id="entity-modal-backdrop">
-      <div class="entity-modal" id="entity-modal">
-        <button class="entity-modal-close" id="entity-modal-close">✕</button>
-        <div class="entity-modal-name" id="entity-modal-name"></div>
-        <div class="entity-modal-id" id="entity-modal-id"></div>
-        <div class="entity-modal-state" id="entity-modal-state"></div>
-        <div class="entity-modal-attrs" id="entity-modal-attrs"></div>
       </div>
     </div>
   `;
@@ -331,15 +302,6 @@
           if (list) self._renderSuggestions(list, input);
         })
         .catch(function () {});
-
-      /* Modal schließen */
-      var backdrop = this.shadowRoot.getElementById('entity-modal-backdrop');
-      this.shadowRoot.getElementById('entity-modal-close').addEventListener('click', function () {
-        backdrop.classList.add('hidden');
-      });
-      backdrop.addEventListener('click', function (e) {
-        if (e.target === backdrop) backdrop.classList.add('hidden');
-      });
 
       /* Senden */
       sendBtn.addEventListener('click',  function () { self._send(); });
@@ -550,52 +512,11 @@
       }
     }
 
-    /* ── Entity-Modal öffnen ───────────────────────────────────────── */
+    /* ── HA More-Info Dialog öffnen (Canonical Way) ───────────────── */
     _openMoreInfo(entityId) {
-      var root     = this.shadowRoot;
-      var backdrop = root.getElementById('entity-modal-backdrop');
-      var nameEl   = root.getElementById('entity-modal-name');
-      var idEl     = root.getElementById('entity-modal-id');
-      var stateEl  = root.getElementById('entity-modal-state');
-      var attrsEl  = root.getElementById('entity-modal-attrs');
-
-      nameEl.textContent  = entityId;
-      idEl.textContent    = entityId;
-      stateEl.innerHTML   = '<span class="entity-modal-loading">Lade…</span>';
-      attrsEl.innerHTML   = '';
-      backdrop.classList.remove('hidden');
-
-      fetch(apiBase() + '/api/ha_entity_state?entity_id=' + encodeURIComponent(entityId))
-        .then(function (r) { return r.json().catch(function () { return {}; }); })
-        .then(function (data) {
-          var state     = (data.state || '').toLowerCase();
-          var OFF_STATES = ['off','closed','locked','idle','not_home','paused','unavailable','unknown','disabled','standby'];
-          var dotCls    = state === '' ? 'entity-unknown' : (OFF_STATES.indexOf(state) >= 0 ? 'entity-off' : 'entity-on');
-          var friendly  = (data.attributes && data.attributes.friendly_name) || entityId;
-
-          nameEl.textContent = friendly;
-          idEl.textContent   = entityId;
-          stateEl.innerHTML  = '<span class="entity-modal-dot ' + dotCls + '"></span>'
-                             + '<span class="entity-modal-state-text">' + escapeHtml(data.state || '–') + '</span>';
-
-          attrsEl.innerHTML = '';
-          var attrs = data.attributes || {};
-          var SKIP  = ['friendly_name', 'icon'];
-          Object.keys(attrs).forEach(function (k) {
-            if (SKIP.indexOf(k) >= 0) return;
-            var val = attrs[k];
-            if (typeof val === 'object') val = JSON.stringify(val);
-            var row = document.createElement('div');
-            row.className = 'entity-modal-attr';
-            row.innerHTML = '<span class="entity-modal-attr-key">' + escapeHtml(k) + '</span>'
-                          + '<span class="entity-modal-attr-val">' + escapeHtml(String(val)) + '</span>';
-            attrsEl.appendChild(row);
-          });
-          if (!attrsEl.children.length) attrsEl.innerHTML = '<span class="entity-modal-loading">Keine Attribute</span>';
-        })
-        .catch(function () {
-          stateEl.innerHTML = '<span class="entity-modal-loading">Fehler beim Laden</span>';
-        });
+      var ev = new Event('hass-more-info', { bubbles: true, composed: true });
+      ev.detail = { entityId: entityId, view: 'info' };
+      this.dispatchEvent(ev);
     }
 
 
