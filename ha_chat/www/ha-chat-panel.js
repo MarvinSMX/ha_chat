@@ -60,11 +60,19 @@
       *, *::before, *::after { box-sizing: border-box; }
       :host { display: block; height: 100%; }
       .container { height: 100%; display: flex; flex-direction: column; align-items: center; padding: 16px; background: #1c1c1c; color: #e0e0e0; font-family: inherit; }
-      .chat-inner { width: 100%; max-width: none; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+      .chat-inner { width: 100%; flex: 1; display: flex; flex-direction: column; min-height: 0; }
 
-      /* ── Thread ── */
-      .thread { flex: 1; width: 100%; overflow-y: auto; margin-bottom: 12px; min-height: 0; padding-right: 2px; display: flex; flex-direction: column; align-items: flex-start; }
-      .msg { margin: 8px 0; padding: 11px 15px; border-radius: 18px; max-width: min(88%, 620px); width: fit-content; line-height: 1.55; font-size: 0.97rem; }
+      /* ── Thread: volle Breite, Scrollbar am Rand ── */
+      .thread { flex: 1; width: 100%; overflow-y: auto; margin-bottom: 12px; min-height: 0; }
+      /* Custom vertical scrollbar */
+      .thread::-webkit-scrollbar { width: 5px; }
+      .thread::-webkit-scrollbar-track { background: transparent; }
+      .thread::-webkit-scrollbar-thumb { background: #383838; border-radius: 3px; }
+      .thread::-webkit-scrollbar-thumb:hover { background: #555; }
+
+      /* ── Nachrichten-Spalte: gleiche Breite wie Input ── */
+      .msg-col { width: min(100%, 620px); margin: 0 auto; display: flex; flex-direction: column; align-items: flex-start; padding: 4px 0 8px; }
+      .msg { margin: 6px 0; padding: 11px 15px; border-radius: 18px; max-width: 92%; width: fit-content; line-height: 1.55; font-size: 0.97rem; }
       .msg.user { background: #009AC7; color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
       .msg.assistant { background: #2d2d2d; border: 1px solid #3a3a3a; border-bottom-left-radius: 4px; }
       /* ── Stream-Cursor ── */
@@ -117,7 +125,12 @@
 
       /* ── Input-Bereich ── */
       .input-area { flex-shrink: 0; width: min(100%, 620px); margin: 0 auto; overflow: visible; }
-      .prompt-suggestions { display: flex; flex-wrap: nowrap; gap: 6px; margin-bottom: 8px; overflow-x: auto; overflow-y: visible; padding-bottom: 2px; }
+      .prompt-suggestions { display: flex; flex-wrap: nowrap; gap: 6px; margin-bottom: 8px; overflow-x: auto; overflow-y: visible; padding-bottom: 4px; }
+      /* Custom horizontal scrollbar */
+      .prompt-suggestions::-webkit-scrollbar { height: 3px; }
+      .prompt-suggestions::-webkit-scrollbar-track { background: transparent; }
+      .prompt-suggestions::-webkit-scrollbar-thumb { background: #383838; border-radius: 2px; }
+      .prompt-suggestions::-webkit-scrollbar-thumb:hover { background: #555; }
       .prompt-suggestion { flex: 0 0 auto; padding: 5px 13px; background: transparent; border: 1px solid #3a3a3a; color: #aaa; border-radius: 16px; cursor: pointer; font-size: 0.83em; font-family: inherit; white-space: nowrap; transition: border-color .15s, color .15s; }
       .prompt-suggestion:hover { border-color: #009AC7; color: #009AC7; }
       .input-wrapper { display: flex; align-items: center; gap: 10px; padding: 7px 7px 7px 18px; background: #2d2d2d; border: 1px solid #3a3a3a; border-radius: 26px; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
@@ -133,7 +146,7 @@
     </style>
     <div class="container">
       <div class="chat-inner">
-        <div class="thread" id="thread"></div>
+        <div class="thread" id="thread"><div class="msg-col" id="msg-col"></div></div>
         <div class="input-area">
           <div class="prompt-suggestions" id="prompt-suggestions"></div>
           <div class="input-wrapper">
@@ -384,23 +397,27 @@
 
       var idx = 0;
 
+      var threadEl = self.shadowRoot.getElementById('thread');
+
       function tick() {
         idx = Math.min(idx + CHUNK, fullText.length);
         var partial = fullText.slice(0, idx);
         var done = idx >= fullText.length;
 
         /* Nur das Content-Element des Ziel-Bubbles aktualisieren */
-        var threadEl = self.shadowRoot.getElementById('thread');
-        if (threadEl) {
-          var bubbles = threadEl.querySelectorAll('.msg.assistant');
+        var msgCol = self.shadowRoot.getElementById('msg-col');
+        if (msgCol) {
+          var bubbles = msgCol.querySelectorAll('.msg.assistant');
           var bubble = bubbles[msgIdx] || bubbles[bubbles.length - 1];
           if (bubble) {
             var cEl = bubble.querySelector('.content');
             if (cEl) {
-              cEl.innerHTML = escapeHtml(partial) + (done ? '' : '<span class="stream-cursor"></span>');
+              cEl.innerHTML = renderMarkdown(partial) + (done ? '' : '<span class="stream-cursor"></span>');
             }
           }
         }
+        /* Beim Streamen immer nach unten scrollen */
+        if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
 
         if (!done) {
           setTimeout(tick, DELAY);
@@ -418,8 +435,9 @@
     /* ── Render ────────────────────────────────────────────────────── */
     _render() {
       var threadEl = this.shadowRoot.getElementById('thread');
+      var msgCol   = this.shadowRoot.getElementById('msg-col');
       var scrollBottom = threadEl.scrollHeight - threadEl.scrollTop - threadEl.clientHeight < 80;
-      threadEl.innerHTML = '';
+      msgCol.innerHTML = '';
 
       this._thread.forEach(function (m) {
         var div = document.createElement('div');
@@ -459,7 +477,7 @@
           }
           div.innerHTML = html;
         }
-        threadEl.appendChild(div);
+        msgCol.appendChild(div);
       });
 
       if (scrollBottom) threadEl.scrollTop = threadEl.scrollHeight;
