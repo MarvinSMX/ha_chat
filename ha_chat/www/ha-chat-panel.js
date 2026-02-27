@@ -14,9 +14,16 @@
 
   /* ── Template ─────────────────────────────────────────────────────── */
   var template = document.createElement('template');
+  var MDI_FONT_URL = 'https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/fonts/materialdesignicons-webfont.woff2?v=7.4.47';
   template.innerHTML = `
     <style>
-      /* MDI-Font (font-face ist global im document.head, Klassen hier neu definieren) */
+      /* MDI-Font direkt im Shadow DOM laden, damit Icons angezeigt werden */
+      @font-face {
+        font-family: "Material Design Icons";
+        src: url("` + MDI_FONT_URL + `") format("woff2");
+        font-weight: normal;
+        font-style: normal;
+      }
       .mdi { display: inline-block; font: normal normal normal 24px/1 "Material Design Icons"; font-size: inherit; text-rendering: auto; line-height: inherit; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
       .mdi-lightbulb::before        { content: "\F0335"; }
       .mdi-lightbulb-outline::before{ content: "\F0336"; }
@@ -125,14 +132,11 @@
 
       /* ── Input-Bereich ── */
       .input-area { flex-shrink: 0; width: min(100%, 620px); margin: 0 auto; overflow: visible; }
-      .prompt-suggestions { display: flex; flex-wrap: nowrap; gap: 6px; margin-bottom: 8px; overflow-x: auto; overflow-y: visible; padding-bottom: 4px; }
-      /* Custom horizontal scrollbar */
-      .prompt-suggestions::-webkit-scrollbar { height: 3px; }
-      .prompt-suggestions::-webkit-scrollbar-track { background: transparent; }
-      .prompt-suggestions::-webkit-scrollbar-thumb { background: #383838; border-radius: 2px; }
-      .prompt-suggestions::-webkit-scrollbar-thumb:hover { background: #555; }
+      .prompt-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; overflow: hidden; align-items: center; }
       .prompt-suggestion { flex: 0 0 auto; padding: 5px 13px; background: transparent; border: 1px solid #3a3a3a; color: #aaa; border-radius: 16px; cursor: pointer; font-size: 0.83em; font-family: inherit; white-space: nowrap; transition: border-color .15s, color .15s; }
       .prompt-suggestion:hover { border-color: #009AC7; color: #009AC7; }
+      .prompt-suggestion-more { flex: 0 0 auto; padding: 5px 10px; background: #2d2d2d; border: 1px solid #3a3a3a; color: #888; border-radius: 16px; font-size: 0.83em; font-family: inherit; cursor: pointer; }
+.prompt-suggestion-more:hover { border-color: #555; color: #aaa; }
       .input-wrapper { display: flex; align-items: center; gap: 10px; padding: 7px 7px 7px 18px; background: #2d2d2d; border: 1px solid #3a3a3a; border-radius: 26px; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
       .input-wrapper:focus-within { border-color: #009AC7; box-shadow: 0 0 0 1px #009AC7; }
       .input-wrapper input { flex: 1; min-width: 0; padding: 10px 2px; background: transparent; border: none; color: #e0e0e0; font-size: .97rem; outline: none; }
@@ -346,18 +350,36 @@
       var wrap = root.getElementById('prompt-suggestions');
       if (!wrap) return;
       var inp = inputEl || root.getElementById('input');
+      var maxVisible = 5;
+      var expanded = !!this._suggestionsExpanded;
+      var showCount = expanded ? list.length : Math.min(list.length, maxVisible);
+      var moreCount = list.length - showCount;
       wrap.innerHTML = '';
-      list.forEach(function (text) {
+      for (var i = 0; i < showCount; i++) {
+        var text = list[i];
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'prompt-suggestion';
         btn.textContent = text;
-        btn.addEventListener('click', function () {
-          inp.value = text;
-          inp.focus();
-        });
+        btn.addEventListener('click', function (t) {
+          return function () { inp.value = t; inp.focus(); };
+        }(text));
         wrap.appendChild(btn);
-      });
+      }
+      if (moreCount > 0) {
+        var badge = document.createElement('span');
+        badge.className = 'prompt-suggestion-more';
+        badge.textContent = '+' + moreCount;
+        badge.title = moreCount + ' weitere Vorschl\u00e4ge';
+        badge.addEventListener('click', function (self) {
+          return function () {
+            self._suggestionsExpanded = true;
+            self._renderSuggestions(self._suggestionsList || [], inp);
+          };
+        }(this));
+        wrap.appendChild(badge);
+      }
+      this._suggestionsList = list;
     }
 
     /* ── Thread-Verwaltung ─────────────────────────────────────────── */
