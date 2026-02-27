@@ -403,7 +403,6 @@
       });
 
       if (scrollBottom) threadEl.scrollTop = threadEl.scrollHeight;
-      this._refreshEntityStates();
     }
 
     /* ── Fehler ────────────────────────────────────────────────────── */
