@@ -141,6 +141,50 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Home Assistant: Entity-State abfragen (für Anzeige on/off, Icon)
+  if (pathname === '/api/ha_entity_state' && req.method === 'GET') {
+    const opts = getOptions();
+    const entityId = (parsed.query && parsed.query.entity_id) ? String(parsed.query.entity_id).trim() : '';
+    if (!opts.ha_url || !opts.ha_token) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'HA URL oder Token fehlt' }));
+      return;
+    }
+    if (!entityId || !/^[a-z_]+\.[a-z0-9_.-]+$/i.test(entityId)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'entity_id ungültig' }));
+      return;
+    }
+    const urlHa = opts.ha_url + '/api/states/' + encodeURIComponent(entityId);
+    fetch(urlHa, {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + opts.ha_token },
+    })
+      .then((r) => r.json().catch(() => null))
+      .then((data) => {
+        if (!data || data.entity_id === undefined) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ state: 'unknown', icon: 'mdi:help-circle', friendly_name: entityId }));
+          return;
+        }
+        const att = data.attributes || {};
+        const domain = (data.entity_id || '').split('.')[0];
+        const defaultIcons = { light: 'mdi:lightbulb', switch: 'mdi:flash', cover: 'mdi:blinds', fan: 'mdi:fan', climate: 'mdi:thermostat', lock: 'mdi:lock', media_player: 'mdi:cast' };
+        const icon = att.icon || defaultIcons[domain] || 'mdi:circle-outline';
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          state: data.state || 'unknown',
+          icon: icon,
+          friendly_name: att.friendly_name || data.entity_id,
+        }));
+      })
+      .catch((e) => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message || String(e) }));
+      });
+    return;
+  }
+
   // Home Assistant: Service-Aufruf (für Entity-Buttons im Chat)
   if (pathname === '/api/ha_call' && req.method === 'POST') {
     const opts = getOptions();

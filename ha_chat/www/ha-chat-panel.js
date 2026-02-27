@@ -5,6 +5,7 @@
 (function () {
   const template = document.createElement('template');
   template.innerHTML = `
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" />
     <style>
       :host { display: block; height: 100%; box-sizing: border-box; }
       .container { height: 100%; display: flex; flex-direction: column; padding: 16px; box-sizing: border-box; background: #1c1c1c; color: #e0e0e0; }
@@ -21,8 +22,16 @@
       .actions { margin-top: 10px; }
       .actions button { margin-right: 8px; margin-top: 6px; padding: 8px 14px; cursor: pointer; background: transparent; color: #009AC7; border: 1px solid #009AC7; border-radius: 20px; font-size: 0.9em; }
       .actions button:hover { background: rgba(0, 154, 199, 0.15); }
-      .msg .content button.entity-btn { display: inline-block; margin: 0 2px 2px 0; padding: 2px 10px; border-radius: 12px; font-size: 0.85em; border: none; cursor: pointer; background: #009AC7; color: #fff; vertical-align: baseline; font-family: inherit; }
-      .msg .content button.entity-btn:hover { background: #007da3; }
+      .msg .content button.entity-btn { display: inline-flex; align-items: center; margin: 0 2px 2px 0; padding: 2px 10px; border-radius: 12px; font-size: 0.85em; border: none; cursor: pointer; background: #555; color: #fff; vertical-align: baseline; font-family: inherit; }
+      .msg .content button.entity-btn:hover { filter: brightness(1.1); }
+      .msg .content button.entity-btn.entity-btn-on { background: #009AC7; }
+      .msg .content button.entity-btn.entity-btn-on:hover { background: #007da3; }
+      .msg .content button.entity-btn.entity-btn-off { background: #555; color: #ccc; }
+      .msg .content button.entity-btn .mdi { margin-right: 5px; font-size: 1.1em; opacity: 0.95; }
+      .actions button.entity-btn { display: inline-flex; align-items: center; }
+      .actions button.entity-btn .mdi { margin-right: 5px; font-size: 1em; }
+      .actions button.entity-btn.entity-btn-on { background: #009AC7; color: #fff; border-color: #009AC7; }
+      .actions button.entity-btn.entity-btn-off { background: transparent; color: #888; border-color: #555; }
       .msg .content button.entity-btn:disabled { opacity: 0.6; cursor: not-allowed; }
       .input-wrapper { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 20px; background: #2d2d2d; border: 1px solid #3a3a3a; border-radius: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.2); }
       .input-wrapper:focus-within { border-color: #009AC7; box-shadow: 0 0 0 1px #009AC7; }
@@ -173,19 +182,53 @@
         div.innerHTML = html;
         if (!m.pending) {
           div.querySelectorAll('.actions button.entity-btn').forEach(function (btn) {
-            btn.addEventListener('click', function () { self._callHaEntity(btn.dataset.entityId, btn.dataset.action, btn); });
+            btn.addEventListener('click', function () { self._callHaEntity(btn.dataset.entityId, 'toggle', btn); });
           });
           div.querySelectorAll('.actions button[data-utterance]').forEach(function (btn) {
             btn.addEventListener('click', function () { self._runAction(btn.dataset.utterance); });
           });
           div.querySelectorAll('.content button.entity-btn').forEach(function (btn) {
-            btn.addEventListener('click', function () { self._callHaEntity(btn.dataset.entityId, btn.dataset.action, btn); });
+            btn.addEventListener('click', function () { self._callHaEntity(btn.dataset.entityId, 'toggle', btn); });
           });
         }
         threadEl.appendChild(div);
       });
       errEl.style.display = 'none';
       threadEl.scrollTop = threadEl.scrollHeight;
+      self._refreshEntityStates();
+    }
+
+    _refreshEntityStates() {
+      var root = this.shadowRoot;
+      var buttons = root.querySelectorAll('.entity-btn[data-entity-id]');
+      var ids = [];
+      for (var i = 0; i < buttons.length; i++) {
+        var id = buttons[i].dataset.entityId;
+        if (id && ids.indexOf(id) === -1) ids.push(id);
+      }
+      var self = this;
+      ids.forEach(function (entityId) {
+        fetch(apiBase() + '/api/ha_entity_state?entity_id=' + encodeURIComponent(entityId))
+          .then(function (r) { return r.json().catch(function () { return {}; }); })
+          .then(function (data) {
+            var state = (data.state || '').toLowerCase();
+            var isOn = state === 'on' || state === 'open' || state === 'unlocked' || state === 'playing' || state === 'home';
+            var icon = (data.icon || 'mdi:circle-outline').replace('mdi:', 'mdi-');
+            var mdiClass = 'mdi ' + icon;
+            var btns = root.querySelectorAll('.entity-btn[data-entity-id="' + escapeAttr(entityId) + '"]');
+            for (var j = 0; j < btns.length; j++) {
+              var btn = btns[j];
+              btn.classList.remove('entity-btn-on', 'entity-btn-off');
+              btn.classList.add(isOn ? 'entity-btn-on' : 'entity-btn-off');
+              var existingIcon = btn.querySelector('.mdi');
+              if (existingIcon) existingIcon.remove();
+              var span = document.createElement('span');
+              span.className = mdiClass;
+              span.setAttribute('aria-hidden', 'true');
+              btn.insertBefore(span, btn.firstChild);
+            }
+          });
+      });
     }
 
     _showError(msg) {
@@ -243,12 +286,13 @@
       fetch(apiBase() + '/api/ha_call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entity_id: entityId, action: action || 'toggle' })
+        body: JSON.stringify({ entity_id: entityId, action: 'toggle' })
       })
         .then(function (r) { return r.json().catch(function () { return {}; }); })
         .then(function (data) {
           if (data.error) self._showError(data.error);
           if (clickedBtn) clickedBtn.disabled = false;
+          self._refreshEntityStates();
         })
         .catch(function (e) {
           self._showError('HA-Aufruf fehlgeschlagen: ' + (e.message || String(e)));

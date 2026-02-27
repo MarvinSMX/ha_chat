@@ -40,17 +40,18 @@ Inhalt von `addon/ha_chat/ha_chat/` ins Add-on-Verzeichnis kopieren (z. B. `ad
 - **answer**: Text; darin werden `[Text](URL)` als klickbare Link-Badges und **Entity-Buttons** gerendert (siehe unten).
 - **sources**: Optionale Quellen-Links.
 - **actions**: Buttons; Klick sendet `utterance` erneut an den Webhook.
-- **entity_actions**: Buttons, die direkt einen Home-Assistant-Service aufrufen (turn_on, turn_off, toggle). Erfordert **HA URL** und **HA Token** in der Add-on-Konfiguration.
+- **entity_actions**: Buttons, die beim Klick die Entity **umschalten** (toggle). Erfordert **HA URL** und **HA Token**.
 
 ### Entity-Buttons im Text (In-Text-Steuerung)
 
 Im Feld **answer** kann N8N folgende Syntax ausgeben; sie wird als klickbarer Badge-Button gerendert:
 
-- **Format:** `[entity:<entity_id>:<action>:<label>]`
-- **action:** `turn_on`, `turn_off` oder `toggle`
-- **Beispiel:** `[entity:light.buero:turn_on:Büro an]` → Button „Büro an“, Klick ruft `light.turn_on` für `light.buero` auf.
+- **Format:** `[entity:<entity_id>:<action>:<label>]` – **action** wird ignoriert, beim Klick wird immer **toggle** aufgerufen.
+- **Beispiel:** `[entity:light.buero:turn_on:Büro]` → Ein Button „Büro“; Klick schaltet die Entity um (an ↔ aus).
 
 Der Add-on-Server leitet den Aufruf an die Home-Assistant-API weiter (Endpoint `/api/ha_call`).
+
+**State-Anzeige:** Wenn **HA URL** und **HA Token** gesetzt sind, fragt die App den aktuellen State jeder Entity ab (`/api/ha_entity_state`). Entity-Buttons werden dann mit **MDI-Icon** (vor dem Text) und **Farbe** dargestellt: **an** (z. B. on, open) = Primary-Farbe (#009AC7), **aus** (off, closed) = grau.
 
 ### MCP (Model Context Protocol) und N8N
 
