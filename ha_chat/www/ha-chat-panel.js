@@ -14,16 +14,9 @@
 
   /* ── Template ─────────────────────────────────────────────────────── */
   var template = document.createElement('template');
-  var MDI_FONT_URL = 'https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/fonts/materialdesignicons-webfont.woff2?v=7.4.47';
   template.innerHTML = `
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
     <style>
-      /* MDI-Font direkt im Shadow DOM laden, damit Icons angezeigt werden */
-      @font-face {
-        font-family: "Material Design Icons";
-        src: url("` + MDI_FONT_URL + `") format("woff2");
-        font-weight: normal;
-        font-style: normal;
-      }
       .mdi { display: inline-block; font: normal normal normal 24px/1 "Material Design Icons"; font-size: inherit; text-rendering: auto; line-height: inherit; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
       .mdi-lightbulb::before        { content: "\F0335"; }
       .mdi-lightbulb-outline::before{ content: "\F0336"; }
@@ -132,7 +125,7 @@
 
       /* ── Input-Bereich ── */
       .input-area { flex-shrink: 0; width: min(100%, 620px); margin: 0 auto; overflow: visible; }
-      .prompt-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; overflow: hidden; align-items: center; }
+      .prompt-suggestions { display: flex; flex-wrap: nowrap; gap: 6px; margin-bottom: 8px; overflow: hidden; align-items: center; }
       .prompt-suggestion { flex: 0 0 auto; padding: 5px 13px; background: transparent; border: 1px solid #3a3a3a; color: #aaa; border-radius: 16px; cursor: pointer; font-size: 0.83em; font-family: inherit; white-space: nowrap; transition: border-color .15s, color .15s; }
       .prompt-suggestion:hover { border-color: #009AC7; color: #009AC7; }
       .prompt-suggestion-more { flex: 0 0 auto; padding: 5px 10px; background: #2d2d2d; border: 1px solid #3a3a3a; color: #888; border-radius: 16px; font-size: 0.83em; font-family: inherit; cursor: pointer; }
@@ -458,8 +451,12 @@
     _render() {
       var threadEl = this.shadowRoot.getElementById('thread');
       var msgCol   = this.shadowRoot.getElementById('msg-col');
+      var suggestEl = this.shadowRoot.getElementById('prompt-suggestions');
       var scrollBottom = threadEl.scrollHeight - threadEl.scrollTop - threadEl.clientHeight < 80;
       msgCol.innerHTML = '';
+
+      /* Suggestions nur bei leerer Unterhaltung */
+      if (suggestEl) suggestEl.style.display = this._thread.length === 0 ? '' : 'none';
 
       this._thread.forEach(function (m) {
         var div = document.createElement('div');
