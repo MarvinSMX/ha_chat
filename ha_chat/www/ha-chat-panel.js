@@ -91,28 +91,23 @@
       .content hr { border: none; border-top: 1px solid #3a3a3a; margin: 8px 0; }
       .content p { margin: 0 0 6px; }
 
-      /* ── Badges: Links & Entitäten ── */
-      .content a.content-link { display: inline-block; color: #fff; background: #009AC7; padding: 1px 10px; border-radius: 12px; text-decoration: none; font-size: 0.83em; margin: 0 2px 2px 0; vertical-align: middle; }
-      .content a.content-link:hover { background: #007da3; }
-      .content button.entity-btn { display: inline-block; margin: 0 2px 2px 0; padding: 1px 10px; border-radius: 12px; font-size: 0.83em; border: none; cursor: pointer; vertical-align: middle; font-family: inherit; transition: filter .15s; }
-      .content button.entity-btn:hover { filter: brightness(1.18); }
-      .content button.entity-btn.entity-on  { background: #009AC7; color: #fff; }
-      .content button.entity-btn.entity-off { background: #3a3a3a; color: #888; }
-      .content button.entity-btn.entity-unknown { background: #2d2d2d; color: #777; }
+      /* ── Einheitlicher Badge-Stil ── */
+      .badge { display: inline-block; margin: 0 2px 2px 0; padding: 1px 10px; border-radius: 12px; font-size: 0.83em; font-family: inherit; vertical-align: middle; text-decoration: none; border: none; cursor: pointer; transition: filter .15s; }
+      .badge:hover { filter: brightness(1.18); }
+      .badge.entity-on      { background: #009AC7; color: #fff; }
+      .badge.entity-off     { background: #3a3a3a; color: #888; }
+      .badge.entity-unknown { background: #2d2d2d; color: #777; }
 
-      /* ── Quellen ── */
-      .sources { margin-top: 8px; font-size: 0.84em; color: #aaa; }
-      .sources a { color: #009AC7; margin-right: 10px; text-decoration: none; }
-      .sources a:hover { text-decoration: underline; }
+      /* Quellen & Links: gleicher Badge, immer cyan */
+      .content a.content-link { background: #009AC7; color: #fff; }
+      .content a.content-link:hover { filter: brightness(0.9); }
 
-      /* ── Aktions-Buttons ── */
+      /* Quellen-Zeile */
+      .sources { margin-top: 8px; font-size: 0.84em; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+      .sources span.sources-label { color: #777; margin-right: 2px; }
+
+      /* Aktions-Buttons (utterance) */
       .actions { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
-      .actions button { padding: 6px 14px; cursor: pointer; background: transparent; color: #009AC7; border: 1px solid #009AC7; border-radius: 20px; font-size: 0.88em; font-family: inherit; }
-      .actions button:hover { background: rgba(0,154,199,.15); }
-      .actions button.entity-btn { display: inline-block; }
-      .actions button.entity-btn.entity-on  { background: #009AC7; color: #fff; border-color: #009AC7; }
-      .actions button.entity-btn.entity-off { background: transparent; color: #666; border-color: #555; }
-      .actions button.entity-btn.entity-unknown { background: transparent; color: #888; border-color: #555; }
 
       /* ── Typing ── */
       .typing-indicator { display: inline-flex; gap: 4px; padding: 2px 0; }
@@ -175,20 +170,20 @@
   /* ── Inline-Markdown: fett, kursiv, code, links, entity-buttons ───── */
   function processInline(text) {
     var out = '';
-    // [entity:<entity_id>:<service>:<beschreibung>]  – service darf leer sein
-    var re = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`|\[([^\]]*)\]\(([^)]+)\)|\[entity:([^\]:]+):([^\]]*):([^\]]*)\])/g;
+    // [entity:<entity_id>:<label>]
+    var re = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`|\[([^\]]*)\]\(([^)]+)\)|\[entity:([^\]:]+):([^\]]*)\])/g;
     var last = 0, m;
     while ((m = re.exec(text)) !== null) {
       out += escapeHtml(text.slice(last, m.index));
       if      (m[2] !== undefined) out += '<strong>' + escapeHtml(m[2]) + '</strong>';
       else if (m[3] !== undefined) out += '<em>' + escapeHtml(m[3]) + '</em>';
       else if (m[4] !== undefined) out += '<code>' + escapeHtml(m[4]) + '</code>';
-      else if (m[5] !== undefined) out += '<a href="' + escapeAttr(m[6]) + '" target="_blank" rel="noopener" class="content-link">' + escapeHtml(m[5]) + '</a>';
+      else if (m[5] !== undefined) out += '<a href="' + escapeAttr(m[6]) + '" target="_blank" rel="noopener" class="badge content-link">' + escapeHtml(m[5]) + '</a>';
       else {
-        /* entity-button: m[7]=entity_id, m[8]=service (ignoriert), m[9]=label */
+        /* entity-button: m[7]=entity_id, m[8]=label */
         var eid   = m[7];
-        var label = (m[9] || m[8] || eid).trim() || eid;
-        out += '<button type="button" class="entity-btn entity-unknown"'
+        var label = (m[8] || eid).trim() || eid;
+        out += '<button type="button" class="badge entity-unknown"'
              + ' data-entity-id="' + escapeAttr(eid) + '">'
              + escapeHtml(label) + '</button>';
       }
@@ -452,11 +447,11 @@
             : (m.role === 'assistant' ? renderMarkdown(m.content) : escapeHtml(m.content));
           var html = '<div class="content">' + bodyHtml + '</div>';
           if (m.sources && m.sources.length) {
-            html += '<div class="sources">Quellen: ' +
+            html += '<div class="sources"><span class="sources-label">Quellen:</span>' +
               m.sources.map(function (s) {
                 return s.url
-                  ? '<a target="_blank" rel="noopener" href="' + escapeAttr(s.url) + '">' + escapeHtml(s.title || 'Link') + '</a>'
-                  : escapeHtml(s.title || '');
+                  ? '<a target="_blank" rel="noopener" href="' + escapeAttr(s.url) + '" class="badge content-link">' + escapeHtml(s.title || 'Link') + '</a>'
+                  : '<span class="badge entity-unknown">' + escapeHtml(s.title || '') + '</span>';
               }).join('') + '</div>';
           }
           var hasActions = (m.entity_actions && m.entity_actions.length) || (m.actions && m.actions.length);
@@ -465,7 +460,7 @@
             (m.entity_actions || []).forEach(function (a) {
               if (!a.entity_id) return;
               var lbl = escapeHtml(a.label || a.entity_id);
-              html += '<button type="button" class="entity-btn entity-unknown" data-entity-id="' + escapeAttr(a.entity_id) + '">' + lbl + '</button>';
+              html += '<button type="button" class="badge entity-unknown" data-entity-id="' + escapeAttr(a.entity_id) + '">' + lbl + '</button>';
             });
             (m.actions || []).forEach(function (a, idx) {
               html += '<button type="button" data-utterance="' + escapeAttr(a.utterance || '') + '">' + escapeHtml(a.label || a.utterance || ('Aktion ' + (idx + 1))) + '</button>';
@@ -486,7 +481,7 @@
       var root  = this.shadowRoot;
       var hass  = this._hass;
       var ids   = [];
-      root.querySelectorAll('.entity-btn[data-entity-id]').forEach(function (b) {
+      root.querySelectorAll('[data-entity-id]').forEach(function (b) {
         var id = b.dataset.entityId;
         if (id && ids.indexOf(id) < 0) ids.push(id);
       });
@@ -508,7 +503,7 @@
                           'unavailable', 'unknown', 'disabled', 'standby'];
         var cls = (state === '' || OFF_STATES.indexOf(state) >= 0) ? 'entity-off' : 'entity-on';
         /* Selector case-insensitiv über toLowerCase absichern */
-        root.querySelectorAll('.entity-btn[data-entity-id]').forEach(function (btn) {
+        root.querySelectorAll('[data-entity-id]').forEach(function (btn) {
           if (btn.dataset.entityId.toLowerCase() === entityId.toLowerCase()) {
             btn.classList.remove('entity-on', 'entity-off', 'entity-unknown');
             btn.classList.add(cls);
@@ -519,12 +514,22 @@
 
     /* ── HA More-Info Dialog öffnen ────────────────────────────────── */
     _openMoreInfo(entityId) {
-      /* Methode 1: hass.callService ist nicht nötig – HA lauscht auf dieses Event */
-      this.dispatchEvent(new CustomEvent('hass-more-info', {
-        detail: { entityId: entityId },
-        bubbles: true,
-        composed: true
-      }));
+      /* HA erwartet new Event (nicht CustomEvent) mit manuell gesetztem .detail */
+      var ev = new Event('hass-more-info', { bubbles: true, composed: true });
+      ev.detail = { entityId: entityId };
+      /* Vom Element selbst dispatchen (für direkt eingebettete Panels) */
+      this.dispatchEvent(ev);
+      /* Zusätzlich auf document/window feuern (für Ingress-Panels) */
+      try {
+        var ev2 = new Event('hass-more-info', { bubbles: true, composed: true });
+        ev2.detail = { entityId: entityId };
+        document.dispatchEvent(ev2);
+      } catch (e) {}
+      try {
+        var ev3 = new Event('hass-more-info', { bubbles: true, composed: true });
+        ev3.detail = { entityId: entityId };
+        window.dispatchEvent(ev3);
+      } catch (e) {}
     }
 
 
