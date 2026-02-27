@@ -15,47 +15,7 @@
   /* ── Template ─────────────────────────────────────────────────────── */
   var template = document.createElement('template');
   template.innerHTML = `
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
     <style>
-      .mdi { display: inline-block; font: normal normal normal 24px/1 "Material Design Icons"; font-size: inherit; text-rendering: auto; line-height: inherit; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-      .mdi-lightbulb::before        { content: "\F0335"; }
-      .mdi-lightbulb-outline::before{ content: "\F0336"; }
-      .mdi-flash::before             { content: "\F0239"; }
-      .mdi-flash-off::before         { content: "\F023A"; }
-      .mdi-toggle-switch::before     { content: "\F0533"; }
-      .mdi-toggle-switch-off::before { content: "\F0534"; }
-      .mdi-thermostat::before        { content: "\F393"; }
-      .mdi-blinds::before            { content: "\F0BFC"; }
-      .mdi-blinds-open::before       { content: "\F0BFD"; }
-      .mdi-fan::before               { content: "\F0210"; }
-      .mdi-lock::before              { content: "\F033E"; }
-      .mdi-lock-open::before         { content: "\F033F"; }
-      .mdi-cast::before              { content: "\F00B7"; }
-      .mdi-cast-off::before          { content: "\F07A3"; }
-      .mdi-motion-sensor::before     { content: "\F0E4A"; }
-      .mdi-circle-outline::before    { content: "\F0765"; }
-      .mdi-help-circle::before       { content: "\F02D6"; }
-      .mdi-power::before             { content: "\F0425"; }
-      .mdi-power-plug::before        { content: "\F06A5"; }
-      .mdi-power-plug-off::before    { content: "\F06A6"; }
-      .mdi-door::before              { content: "\F0E59"; }
-      .mdi-door-open::before         { content: "\F0E5A"; }
-      .mdi-window-closed::before     { content: "\F0559"; }
-      .mdi-window-open::before       { content: "\F055A"; }
-      .mdi-water-heater::before      { content: "\F09A1"; }
-      .mdi-air-conditioner::before   { content: "\F0006"; }
-      .mdi-television::before        { content: "\F0502"; }
-      .mdi-speaker::before           { content: "\F04C3"; }
-      .mdi-cellphone::before         { content: "\F00B2"; }
-      .mdi-car::before               { content: "\F00E7"; }
-      .mdi-garage::before            { content: "\F069B"; }
-      .mdi-garage-open::before       { content: "\F069C"; }
-      .mdi-alarm::before             { content: "\F0020"; }
-      .mdi-alarm-off::before         { content: "\F0024"; }
-      .mdi-smoke-detector::before    { content: "\F0E08"; }
-      .mdi-water::before             { content: "\F0550"; }
-      .mdi-robot-vacuum::before      { content: "\F0DA1"; }
-      .mdi-washing-machine::before   { content: "\F072D"; }
 
       *, *::before, *::after { box-sizing: border-box; }
       :host { display: block; height: 100%; }
@@ -91,12 +51,8 @@
       .content hr { border: none; border-top: 1px solid #3a3a3a; margin: 8px 0; }
       .content p { margin: 0 0 6px; }
 
-      /* ── Einheitlicher Badge-Stil ── */
+      /* ── Badge-Stil (nur Links/Quellen) ── */
       .badge { display: inline-block; margin: 0 2px 2px 0; padding: 1px 10px; border-radius: 12px; font-size: 0.83em; font-family: inherit; vertical-align: middle; text-decoration: none; border: none; cursor: pointer; transition: filter .15s; }
-      .badge:hover { filter: brightness(1.18); }
-      .badge.entity-on      { background: #009AC7; color: #fff; }
-      .badge.entity-off     { background: #3a3a3a; color: #888; }
-      .badge.entity-unknown { background: #2d2d2d; color: #777; }
 
       /* Quellen & Links: gleicher Badge, immer cyan */
       .content a.content-link { background: #009AC7; color: #fff; }
@@ -118,7 +74,7 @@
 
       /* ── Input-Bereich ── */
       .input-area { flex-shrink: 0; width: min(100%, 620px); margin: 0 auto; overflow: visible; }
-      .prompt-suggestions { display: flex; flex-wrap: nowrap; gap: 6px; margin-bottom: 8px; overflow: hidden; align-items: center; }
+      .prompt-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; align-items: center; }
       .prompt-suggestion { flex: 0 0 auto; padding: 5px 13px; background: transparent; border: 1px solid #3a3a3a; color: #aaa; border-radius: 16px; cursor: pointer; font-size: 0.83em; font-family: inherit; white-space: nowrap; transition: border-color .15s, color .15s; }
       .prompt-suggestion:hover { border-color: #009AC7; color: #009AC7; }
       .prompt-suggestion-more { flex: 0 0 auto; padding: 5px 10px; background: #2d2d2d; border: 1px solid #3a3a3a; color: #888; border-radius: 16px; font-size: 0.83em; font-family: inherit; cursor: pointer; }
@@ -167,26 +123,17 @@
       .replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  /* ── Inline-Markdown: fett, kursiv, code, links, entity-buttons ───── */
+  /* ── Inline-Markdown: fett, kursiv, code, links ───────────────────── */
   function processInline(text) {
     var out = '';
-    // [entity:<entity_id>:<label>]
-    var re = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`|\[([^\]]*)\]\(([^)]+)\)|\[entity:([^\]:]+):([^\]]*)\])/g;
+    var re = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`|\[([^\]]*)\]\(([^)]+)\))/g;
     var last = 0, m;
     while ((m = re.exec(text)) !== null) {
       out += escapeHtml(text.slice(last, m.index));
       if      (m[2] !== undefined) out += '<strong>' + escapeHtml(m[2]) + '</strong>';
       else if (m[3] !== undefined) out += '<em>' + escapeHtml(m[3]) + '</em>';
       else if (m[4] !== undefined) out += '<code>' + escapeHtml(m[4]) + '</code>';
-      else if (m[5] !== undefined) out += '<a href="' + escapeAttr(m[6]) + '" target="_blank" rel="noopener" class="badge content-link">' + escapeHtml(m[5]) + '</a>';
-      else {
-        /* entity-button: m[7]=entity_id, m[8]=label */
-        var eid   = m[7];
-        var label = (m[8] || eid).trim() || eid;
-        out += '<button type="button" class="badge entity-unknown"'
-             + ' data-entity-id="' + escapeAttr(eid) + '">'
-             + escapeHtml(label) + '</button>';
-      }
+      else                         out += '<a href="' + escapeAttr(m[6]) + '" target="_blank" rel="noopener" class="badge content-link">' + escapeHtml(m[5]) + '</a>';
       last = re.lastIndex;
     }
     out += escapeHtml(text.slice(last));
@@ -276,13 +223,6 @@
       this.attachShadow({ mode: 'open' });
       this.shadowRoot.appendChild(template.content.cloneNode(true));
       this._thread = [];
-      this._hass = null;
-    }
-
-    set hass(value) {
-      this._hass = value;
-      /* Entity-States beim ersten Setzen und bei Updates sofort auffrischen */
-      this._refreshEntityStates();
     }
 
     connectedCallback() {
@@ -309,8 +249,6 @@
 
       /* Event-Delegation auf Thread – verhindert doppelte Listener */
       threadEl.addEventListener('click', function (e) {
-        var btn = e.target.closest('button[data-entity-id]');
-        if (btn) { self._openMoreInfo(btn.dataset.entityId); return; }
         var ub = e.target.closest('button[data-utterance]');
         if (ub) { self._runAction(ub.dataset.utterance); }
       });
@@ -360,18 +298,16 @@
         role: role, content: content,
         sources: extra.sources || [],
         actions: extra.actions || [],
-        entity_actions: extra.entity_actions || [],
         pending: !!extra.pending
       });
       this._render();
     }
 
-    _setLastAssistantMessage(content, sources, actions, entity_actions) {
+    _setLastAssistantMessage(content, sources, actions) {
       for (var i = this._thread.length - 1; i >= 0; i--) {
         if (this._thread[i].role === 'assistant') {
           this._thread[i].sources = sources || [];
           this._thread[i].actions = actions || [];
-          this._thread[i].entity_actions = entity_actions || [];
           this._thread[i].pending = false;
           this._thread[i].streaming = !!content;
           this._thread[i].content = '';
@@ -451,18 +387,12 @@
               m.sources.map(function (s) {
                 return s.url
                   ? '<a target="_blank" rel="noopener" href="' + escapeAttr(s.url) + '" class="badge content-link">' + escapeHtml(s.title || 'Link') + '</a>'
-                  : '<span class="badge entity-unknown">' + escapeHtml(s.title || '') + '</span>';
+                  : '<span class="badge content-link" style="opacity:.7;cursor:default">' + escapeHtml(s.title || '') + '</span>';
               }).join('') + '</div>';
           }
-          var hasActions = (m.entity_actions && m.entity_actions.length) || (m.actions && m.actions.length);
-          if (hasActions) {
+          if (m.actions && m.actions.length) {
             html += '<div class="actions">';
-            (m.entity_actions || []).forEach(function (a) {
-              if (!a.entity_id) return;
-              var lbl = escapeHtml(a.label || a.entity_id);
-              html += '<button type="button" class="badge entity-unknown" data-entity-id="' + escapeAttr(a.entity_id) + '">' + lbl + '</button>';
-            });
-            (m.actions || []).forEach(function (a, idx) {
+            m.actions.forEach(function (a, idx) {
               html += '<button type="button" data-utterance="' + escapeAttr(a.utterance || '') + '">' + escapeHtml(a.label || a.utterance || ('Aktion ' + (idx + 1))) + '</button>';
             });
             html += '</div>';
@@ -475,50 +405,6 @@
       if (scrollBottom) threadEl.scrollTop = threadEl.scrollHeight;
       this._refreshEntityStates();
     }
-
-    /* ── Entity-States direkt aus hass.states lesen & Buttons einfärben ── */
-    _refreshEntityStates() {
-      var root  = this.shadowRoot;
-      var hass  = this._hass;
-      var ids   = [];
-      root.querySelectorAll('[data-entity-id]').forEach(function (b) {
-        var id = b.dataset.entityId;
-        if (id && ids.indexOf(id) < 0) ids.push(id);
-      });
-      ids.forEach(function (entityId) {
-        var stateObj = hass && hass.states && hass.states[entityId];
-        if (stateObj) {
-          applyStateClass(entityId, stateObj.state);
-        } else {
-          /* Fallback: addon-Proxy */
-          fetch(apiBase() + '/api/ha_entity_state?entity_id=' + encodeURIComponent(entityId))
-            .then(function (r) { return r.json().catch(function () { return {}; }); })
-            .then(function (data) { if (data.state) applyStateClass(entityId, data.state); });
-        }
-      });
-
-      function applyStateClass(entityId, stateRaw) {
-        var state = (stateRaw || '').toLowerCase();
-        var OFF_STATES = ['off', 'closed', 'locked', 'idle', 'not_home', 'paused',
-                          'unavailable', 'unknown', 'disabled', 'standby'];
-        var cls = (state === '' || OFF_STATES.indexOf(state) >= 0) ? 'entity-off' : 'entity-on';
-        /* Selector case-insensitiv über toLowerCase absichern */
-        root.querySelectorAll('[data-entity-id]').forEach(function (btn) {
-          if (btn.dataset.entityId.toLowerCase() === entityId.toLowerCase()) {
-            btn.classList.remove('entity-on', 'entity-off', 'entity-unknown');
-            btn.classList.add(cls);
-          }
-        });
-      }
-    }
-
-    /* ── HA More-Info Dialog öffnen (Canonical Way) ───────────────── */
-    _openMoreInfo(entityId) {
-      var ev = new Event('hass-more-info', { bubbles: true, composed: true });
-      ev.detail = { entityId: entityId, view: 'info' };
-      this.dispatchEvent(ev);
-    }
-
 
     /* ── Fehler ────────────────────────────────────────────────────── */
     _showError(msg) {
@@ -555,7 +441,7 @@
             self._showError(d.error);
             self._setLastAssistantMessage('Fehler: ' + d.error);
           } else {
-            self._setLastAssistantMessage(d.answer || '', d.sources || [], d.actions || [], d.entity_actions || []);
+            self._setLastAssistantMessage(d.answer || '', d.sources || [], d.actions || []);
           }
         })
         .catch(function (e) {
@@ -590,7 +476,7 @@
             self._setLastAssistantMessage('Fehler: ' + d.error);
           } else {
             var ans = d.answer != null ? d.answer : (d.response != null ? d.response : '');
-            self._setLastAssistantMessage(ans, d.sources || [], d.actions || [], d.entity_actions || []);
+            self._setLastAssistantMessage(ans, d.sources || [], d.actions || []);
           }
         })
         .catch(function (e) {
