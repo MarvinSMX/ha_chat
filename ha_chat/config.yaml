@@ -15,5 +15,9 @@ ports:
 ingress: true
 options:
   n8n_inference_webhook_url: ""
+  ha_url: ""
+  ha_token: ""
 schema:
   n8n_inference_webhook_url: str
+  ha_url: str
+  ha_token: str

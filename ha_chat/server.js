@@ -18,17 +18,28 @@ const OPTIONS_PATH = path.join(DATA_DIR, 'options.json');
 const WWW_DIR = path.join(__dirname, 'www');
 const PORT = parseInt(process.env.SUPERVISOR_INGRESS_PORT || process.env.PORT || '8099', 10);
 
-function getInferenceUrl() {
+function getOptions() {
+  const empty = { n8n_inference_webhook_url: '', ha_url: '', ha_token: '' };
   try {
     const raw = fs.readFileSync(OPTIONS_PATH, 'utf-8');
     const opts = JSON.parse(raw);
-    const u = (opts.n8n_inference_webhook_url || '').trim();
-    if (u) return u.replace(/\/$/, '');
+    return {
+      n8n_inference_webhook_url: (opts.n8n_inference_webhook_url || '').trim().replace(/\/$/, ''),
+      ha_url: (opts.ha_url || '').trim().replace(/\/$/, ''),
+      ha_token: (opts.ha_token || '').trim(),
+    };
   } catch (e) {
-    console.log('[HA Chat] options.json nicht lesbar:', e.message);
+    if (e.code !== 'ENOENT') console.log('[HA Chat] options.json:', e.message);
   }
-  const u = (process.env.N8N_INFERENCE_WEBHOOK_URL || '').trim();
-  return u ? u.replace(/\/$/, '') : '';
+  return {
+    n8n_inference_webhook_url: (process.env.N8N_INFERENCE_WEBHOOK_URL || '').trim().replace(/\/$/, ''),
+    ha_url: (process.env.HA_URL || '').trim().replace(/\/$/, ''),
+    ha_token: (process.env.HA_TOKEN || '').trim(),
+  };
+}
+
+function getInferenceUrl() {
+  return getOptions().n8n_inference_webhook_url;
 }
 
 function collectBody(req) {
@@ -127,6 +138,56 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     proxyToN8n(inferenceUrl, { message }, res, 'chat');
+    return;
+  }
+
+  // Home Assistant: Service-Aufruf (für Entity-Buttons im Chat)
+  if (pathname === '/api/ha_call' && req.method === 'POST') {
+    const opts = getOptions();
+    if (!opts.ha_url || !opts.ha_token) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'HA URL oder Token fehlt (Add-on konfigurieren)' }));
+      return;
+    }
+    const body = await collectBody(req);
+    let data;
+    try {
+      data = JSON.parse(body || '{}');
+    } catch (_) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Ungültiges JSON' }));
+      return;
+    }
+    const entityId = (data.entity_id || '').trim();
+    const action = (data.action || 'toggle').toLowerCase();
+    if (!entityId || !/^[a-z_]+\.[a-z0-9_]+$/i.test(entityId)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'entity_id ungültig' }));
+      return;
+    }
+    const allowed = ['turn_on', 'turn_off', 'toggle'];
+    const service = allowed.includes(action) ? action : 'toggle';
+    const domain = entityId.split('.')[0];
+    const urlHa = opts.ha_url + '/api/services/' + domain + '/' + service;
+    console.log('[HA Chat] ha_call ' + entityId + ' → ' + service);
+    fetch(urlHa, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + opts.ha_token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ entity_id: entityId }),
+    })
+      .then((r) => r.json().catch(() => ({})))
+      .then((json) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(json || {}));
+      })
+      .catch((e) => {
+        console.log('[HA Chat] ha_call Fehler: ' + (e.message || String(e)));
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message || String(e) }));
+      });
     return;
   }
 

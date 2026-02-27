@@ -21,6 +21,9 @@
       .actions { margin-top: 10px; }
       .actions button { margin-right: 8px; margin-top: 6px; padding: 8px 14px; cursor: pointer; background: transparent; color: #009AC7; border: 1px solid #009AC7; border-radius: 20px; font-size: 0.9em; }
       .actions button:hover { background: rgba(0, 154, 199, 0.15); }
+      .msg .content button.entity-btn { display: inline-block; margin: 0 2px 2px 0; padding: 2px 10px; border-radius: 12px; font-size: 0.85em; border: none; cursor: pointer; background: #009AC7; color: #fff; vertical-align: baseline; font-family: inherit; }
+      .msg .content button.entity-btn:hover { background: #007da3; }
+      .msg .content button.entity-btn:disabled { opacity: 0.6; cursor: not-allowed; }
       .input-wrapper { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 20px; background: #2d2d2d; border: 1px solid #3a3a3a; border-radius: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.2); }
       .input-wrapper:focus-within { border-color: #009AC7; box-shadow: 0 0 0 1px #009AC7; }
       .input-row input { flex: 1; min-width: 0; padding: 12px 4px 12px 0; background: transparent; border: none; color: #e0e0e0; font-size: 1rem; outline: none; }
@@ -108,16 +111,24 @@
 
     _addMessage(role, content, extra) {
       extra = extra || {};
-      this._thread.push({ role: role, content: content, sources: extra.sources, actions: extra.actions, pending: !!extra.pending });
+      this._thread.push({
+        role: role,
+        content: content,
+        sources: extra.sources || [],
+        actions: extra.actions || [],
+        entity_actions: extra.entity_actions || [],
+        pending: !!extra.pending
+      });
       this._render();
     }
 
-    _setLastAssistantMessage(content, sources, actions) {
+    _setLastAssistantMessage(content, sources, actions, entity_actions) {
       for (var i = this._thread.length - 1; i >= 0; i--) {
         if (this._thread[i].role === 'assistant') {
           this._thread[i].content = content;
           this._thread[i].sources = sources || [];
           this._thread[i].actions = actions || [];
+          this._thread[i].entity_actions = entity_actions || [];
           this._thread[i].pending = false;
           this._render();
           return;
@@ -145,9 +156,14 @@
             });
             html += '</div>';
           }
-          if (m.actions && m.actions.length) {
+          if ((m.entity_actions && m.entity_actions.length) || (m.actions && m.actions.length)) {
             html += '<div class="actions">';
-            m.actions.forEach(function (a, i) {
+            (m.entity_actions || []).forEach(function (a) {
+              var lid = a.entity_id || ''; var act = (a.action || 'toggle').toLowerCase();
+              if (!lid) return;
+              html += '<button type="button" class="entity-btn" data-entity-id="' + escapeAttr(lid) + '" data-action="' + escapeAttr(act) + '">' + escapeHtml(a.label || lid) + '</button>';
+            });
+            (m.actions || []).forEach(function (a, i) {
               var label = a.label || a.utterance || ('Aktion ' + (i + 1));
               html += '<button type="button" data-utterance="' + escapeHtml((a.utterance || '')) + '">' + escapeHtml(label) + '</button>';
             });
@@ -155,9 +171,15 @@
           }
         }
         div.innerHTML = html;
-        if (!m.pending && m.actions && m.actions.length) {
-          div.querySelectorAll('.actions button').forEach(function (btn) {
+        if (!m.pending) {
+          div.querySelectorAll('.actions button.entity-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () { self._callHaEntity(btn.dataset.entityId, btn.dataset.action, btn); });
+          });
+          div.querySelectorAll('.actions button[data-utterance]').forEach(function (btn) {
             btn.addEventListener('click', function () { self._runAction(btn.dataset.utterance); });
+          });
+          div.querySelectorAll('.content button.entity-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () { self._callHaEntity(btn.dataset.entityId, btn.dataset.action, btn); });
           });
         }
         threadEl.appendChild(div);
@@ -199,7 +221,7 @@
             self._showError(data.error);
             self._setLastAssistantMessage('Fehler: ' + data.error);
           } else {
-            self._setLastAssistantMessage(data.answer || '', data.sources || [], data.actions || []);
+            self._setLastAssistantMessage(data.answer || '', data.sources || [], data.actions || [], data.entity_actions || []);
           }
         })
         .catch(function (e) {
@@ -212,6 +234,25 @@
         })
         .finally(function () {
           sendBtn.disabled = false;
+        });
+    }
+
+    _callHaEntity(entityId, action, clickedBtn) {
+      if (clickedBtn) clickedBtn.disabled = true;
+      var self = this;
+      fetch(apiBase() + '/api/ha_call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entity_id: entityId, action: action || 'toggle' })
+      })
+        .then(function (r) { return r.json().catch(function () { return {}; }); })
+        .then(function (data) {
+          if (data.error) self._showError(data.error);
+          if (clickedBtn) clickedBtn.disabled = false;
+        })
+        .catch(function (e) {
+          self._showError('HA-Aufruf fehlgeschlagen: ' + (e.message || String(e)));
+          if (clickedBtn) clickedBtn.disabled = false;
         });
     }
 
@@ -235,7 +276,7 @@
             self._showError(data.error);
             self._setLastAssistantMessage('Fehler: ' + data.error);
           } else {
-            self._setLastAssistantMessage(data.answer != null ? data.answer : (data.response != null ? data.response : ''));
+            self._setLastAssistantMessage(data.answer != null ? data.answer : (data.response != null ? data.response : ''), data.sources || [], data.actions || [], data.entity_actions || []);
           }
         })
         .catch(function (e) {
@@ -267,20 +308,36 @@
   }
 
   /**
-   * Nachrichtentext für Anzeige: HTML escapen, aber Markdown-Links [Text](URL) in klickbare Links umwandeln.
+   * Nachrichtentext: Entity-Buttons [entity:entity_id:action:label] und Markdown-Links [Text](URL) rendern.
    */
   function formatMessageContent(text) {
     if (text == null || text === '') return '';
-    var re = /\[([^\]]*)\]\(([^)]+)\)/g;
     var out = '';
-    var last = 0;
-    var m;
-    while ((m = re.exec(text)) !== null) {
-      out += escapeHtml(text.slice(last, m.index));
-      out += '<a href="' + escapeAttr(m[2]) + '" target="_blank" rel="noopener" class="content-link">' + escapeHtml(m[1]) + '</a>';
-      last = re.lastIndex;
+    var reEntity = /\[entity:([^\]:]+):(turn_on|turn_off|toggle):([^\]]*)\]/g;
+    var reLink = /\[([^\]]*)\]\(([^)]+)\)/g;
+    var pos = 0;
+    var s = text;
+    while (pos < s.length) {
+      reEntity.lastIndex = pos;
+      reLink.lastIndex = pos;
+      var me = reEntity.exec(s);
+      var ml = reLink.exec(s);
+      var next, repl;
+      if (me && (!ml || me.index <= ml.index)) {
+        next = me.index;
+        repl = '<button type="button" class="entity-btn content-link" data-entity-id="' + escapeAttr(me[1]) + '" data-action="' + escapeAttr(me[2]) + '">' + escapeHtml(me[3] || me[1]) + '</button>';
+        out += escapeHtml(s.slice(pos, next)) + repl;
+        pos = reEntity.lastIndex;
+      } else if (ml) {
+        next = ml.index;
+        repl = '<a href="' + escapeAttr(ml[2]) + '" target="_blank" rel="noopener" class="content-link">' + escapeHtml(ml[1]) + '</a>';
+        out += escapeHtml(s.slice(pos, next)) + repl;
+        pos = reLink.lastIndex;
+      } else {
+        out += escapeHtml(s.slice(pos));
+        break;
+      }
     }
-    out += escapeHtml(text.slice(last));
     return out;
   }
 
