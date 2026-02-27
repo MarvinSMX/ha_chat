@@ -97,7 +97,8 @@
       .content button.entity-btn { display: inline-block; margin: 0 2px 2px 0; padding: 1px 10px; border-radius: 12px; font-size: 0.83em; border: none; cursor: pointer; vertical-align: middle; font-family: inherit; transition: filter .15s; }
       .content button.entity-btn:hover { filter: brightness(1.15); }
       .content button.entity-btn:disabled { opacity: 0.55; cursor: not-allowed; }
-      .entity-status-only { cursor: default !important; pointer-events: none; opacity: 0.85; }
+      .entity-status-only { cursor: pointer; opacity: 0.9; }
+      .entity-status-only:hover { filter: brightness(1.2); }
       .content button.entity-btn.entity-on  { background: #009AC7; color: #fff; }
       .content button.entity-btn.entity-off { background: #3a3a3a; color: #888; }
       .content button.entity-btn.entity-unknown { background: #2d2d2d; color: #777; }
@@ -198,10 +199,10 @@
                + ' data-action="' + escapeAttr(service) + '">'
                + escapeHtml(label) + '</button>';
         } else {
-          // Kein Service → nur State-Anzeige (Badge, nicht klickbar)
-          out += '<span class="entity-btn entity-unknown entity-status-only"'
+          // Kein Service → State-Anzeige + More-Info on click
+          out += '<button type="button" class="entity-btn entity-unknown entity-status-only"'
                + ' data-entity-id="' + escapeAttr(eid) + '">'
-               + escapeHtml(label) + '</span>';
+               + escapeHtml(label) + '</button>';
         }
       }
       last = re.lastIndex;
@@ -329,7 +330,12 @@
         var btn = e.target.closest('button[data-entity-id]');
         if (btn) {
           var service = (btn.dataset.action || '').trim();
-          if (service) self._callHaEntity(btn.dataset.entityId, service, btn);
+          if (service) {
+            self._callHaEntity(btn.dataset.entityId, service, btn);
+          } else {
+            /* Status-only → HA More-Info Dialog öffnen */
+            self._openMoreInfo(btn.dataset.entityId);
+          }
           return;
         }
         var ub = e.target.closest('button[data-utterance]');
@@ -485,7 +491,7 @@
               if (svc) {
                 html += '<button type="button" class="entity-btn entity-unknown" data-entity-id="' + escapeAttr(a.entity_id) + '" data-action="' + escapeAttr(svc) + '">' + lbl + '</button>';
               } else {
-                html += '<span class="entity-btn entity-unknown entity-status-only" data-entity-id="' + escapeAttr(a.entity_id) + '">' + lbl + '</span>';
+                html += '<button type="button" class="entity-btn entity-unknown entity-status-only" data-entity-id="' + escapeAttr(a.entity_id) + '">' + lbl + '</button>';
               }
             });
             (m.actions || []).forEach(function (a, idx) {
@@ -525,14 +531,27 @@
 
       function applyStateClass(entityId, stateRaw) {
         var state = (stateRaw || '').toLowerCase();
-        var isOn  = state === 'on' || state === 'open' || state === 'unlocked' || state === 'playing' || state === 'home';
-        var isOff = state === 'off' || state === 'closed' || state === 'locked' || state === 'idle' || state === 'not_home' || state === 'paused';
-        var cls   = isOn ? 'entity-on' : isOff ? 'entity-off' : 'entity-unknown';
-        root.querySelectorAll('.entity-btn[data-entity-id="' + escapeAttr(entityId) + '"]').forEach(function (btn) {
-          btn.classList.remove('entity-on', 'entity-off', 'entity-unknown');
-          btn.classList.add(cls);
+        var OFF_STATES = ['off', 'closed', 'locked', 'idle', 'not_home', 'paused',
+                          'unavailable', 'unknown', 'disabled', 'standby'];
+        var cls = (state === '' || OFF_STATES.indexOf(state) >= 0) ? 'entity-off' : 'entity-on';
+        /* Selector case-insensitiv über toLowerCase absichern */
+        root.querySelectorAll('.entity-btn[data-entity-id]').forEach(function (btn) {
+          if (btn.dataset.entityId.toLowerCase() === entityId.toLowerCase()) {
+            btn.classList.remove('entity-on', 'entity-off', 'entity-unknown');
+            btn.classList.add(cls);
+          }
         });
       }
+    }
+
+    /* ── HA More-Info Dialog öffnen ────────────────────────────────── */
+    _openMoreInfo(entityId) {
+      /* Methode 1: hass.callService ist nicht nötig – HA lauscht auf dieses Event */
+      this.dispatchEvent(new CustomEvent('hass-more-info', {
+        detail: { entityId: entityId },
+        bubbles: true,
+        composed: true
+      }));
     }
 
     /* ── HA Service-Aufruf direkt über hass.callService ───────────── */
