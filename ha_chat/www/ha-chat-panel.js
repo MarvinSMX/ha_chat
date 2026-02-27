@@ -95,10 +95,7 @@
       .content a.content-link { display: inline-block; color: #fff; background: #009AC7; padding: 1px 10px; border-radius: 12px; text-decoration: none; font-size: 0.83em; margin: 0 2px 2px 0; vertical-align: middle; }
       .content a.content-link:hover { background: #007da3; }
       .content button.entity-btn { display: inline-block; margin: 0 2px 2px 0; padding: 1px 10px; border-radius: 12px; font-size: 0.83em; border: none; cursor: pointer; vertical-align: middle; font-family: inherit; transition: filter .15s; }
-      .content button.entity-btn:hover { filter: brightness(1.15); }
-      .content button.entity-btn:disabled { opacity: 0.55; cursor: not-allowed; }
-      .entity-status-only { cursor: pointer; opacity: 0.9; }
-      .entity-status-only:hover { filter: brightness(1.2); }
+      .content button.entity-btn:hover { filter: brightness(1.18); }
       .content button.entity-btn.entity-on  { background: #009AC7; color: #fff; }
       .content button.entity-btn.entity-off { background: #3a3a3a; color: #888; }
       .content button.entity-btn.entity-unknown { background: #2d2d2d; color: #777; }
@@ -188,22 +185,12 @@
       else if (m[4] !== undefined) out += '<code>' + escapeHtml(m[4]) + '</code>';
       else if (m[5] !== undefined) out += '<a href="' + escapeAttr(m[6]) + '" target="_blank" rel="noopener" class="content-link">' + escapeHtml(m[5]) + '</a>';
       else {
-        /* entity-button: m[7]=entity_id, m[8]=service (leer→nur Status), m[9]=label */
-        var eid     = m[7];
-        var service = (m[8] || '').trim();
-        var label   = (m[9] || eid).trim() || eid;
-        if (service) {
-          // Klickbarer Button → ruft den Service auf
-          out += '<button type="button" class="entity-btn entity-unknown"'
-               + ' data-entity-id="' + escapeAttr(eid) + '"'
-               + ' data-action="' + escapeAttr(service) + '">'
-               + escapeHtml(label) + '</button>';
-        } else {
-          // Kein Service → State-Anzeige + More-Info on click
-          out += '<button type="button" class="entity-btn entity-unknown entity-status-only"'
-               + ' data-entity-id="' + escapeAttr(eid) + '">'
-               + escapeHtml(label) + '</button>';
-        }
+        /* entity-button: m[7]=entity_id, m[8]=service (ignoriert), m[9]=label */
+        var eid   = m[7];
+        var label = (m[9] || m[8] || eid).trim() || eid;
+        out += '<button type="button" class="entity-btn entity-unknown"'
+             + ' data-entity-id="' + escapeAttr(eid) + '">'
+             + escapeHtml(label) + '</button>';
       }
       last = re.lastIndex;
     }
@@ -328,16 +315,7 @@
       /* Event-Delegation auf Thread – verhindert doppelte Listener */
       threadEl.addEventListener('click', function (e) {
         var btn = e.target.closest('button[data-entity-id]');
-        if (btn) {
-          var service = (btn.dataset.action || '').trim();
-          if (service) {
-            self._callHaEntity(btn.dataset.entityId, service, btn);
-          } else {
-            /* Status-only → HA More-Info Dialog öffnen */
-            self._openMoreInfo(btn.dataset.entityId);
-          }
-          return;
-        }
+        if (btn) { self._openMoreInfo(btn.dataset.entityId); return; }
         var ub = e.target.closest('button[data-utterance]');
         if (ub) { self._runAction(ub.dataset.utterance); }
       });
@@ -486,13 +464,8 @@
             html += '<div class="actions">';
             (m.entity_actions || []).forEach(function (a) {
               if (!a.entity_id) return;
-              var svc = (a.action || a.service || '').trim();
               var lbl = escapeHtml(a.label || a.entity_id);
-              if (svc) {
-                html += '<button type="button" class="entity-btn entity-unknown" data-entity-id="' + escapeAttr(a.entity_id) + '" data-action="' + escapeAttr(svc) + '">' + lbl + '</button>';
-              } else {
-                html += '<button type="button" class="entity-btn entity-unknown entity-status-only" data-entity-id="' + escapeAttr(a.entity_id) + '">' + lbl + '</button>';
-              }
+              html += '<button type="button" class="entity-btn entity-unknown" data-entity-id="' + escapeAttr(a.entity_id) + '">' + lbl + '</button>';
             });
             (m.actions || []).forEach(function (a, idx) {
               html += '<button type="button" data-utterance="' + escapeAttr(a.utterance || '') + '">' + escapeHtml(a.label || a.utterance || ('Aktion ' + (idx + 1))) + '</button>';
@@ -554,46 +527,6 @@
       }));
     }
 
-    /* ── HA Service-Aufruf direkt über hass.callService ───────────── */
-    _callHaEntity(entityId, service, clickedBtn) {
-      if (!service) return;
-      if (clickedBtn) clickedBtn.disabled = true;
-      var self = this;
-      /* service-Format: "domain.service" (z.B. "light.turn_on") */
-      var parts  = service.split('.');
-      var domain = parts[0];
-      var svc    = parts.slice(1).join('.');
-
-      if (this._hass && this._hass.callService) {
-        /* Direkter Aufruf über HA-Websocket */
-        this._hass.callService(domain, svc, { entity_id: entityId })
-          .then(function () {
-            if (clickedBtn) clickedBtn.disabled = false;
-            self._refreshEntityStates();
-          })
-          .catch(function (e) {
-            self._showError('HA-Aufruf fehlgeschlagen: ' + (e.message || e));
-            if (clickedBtn) clickedBtn.disabled = false;
-          });
-      } else {
-        /* Fallback: addon-Proxy */
-        fetch(apiBase() + '/api/ha_call', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ entity_id: entityId, action: service })
-        })
-          .then(function (r) { return r.json().catch(function () { return {}; }); })
-          .then(function (data) {
-            if (data.error) self._showError(data.error);
-            if (clickedBtn) clickedBtn.disabled = false;
-            self._refreshEntityStates();
-          })
-          .catch(function (e) {
-            self._showError('HA-Aufruf fehlgeschlagen: ' + (e.message || e));
-            if (clickedBtn) clickedBtn.disabled = false;
-          });
-      }
-    }
 
     /* ── Fehler ────────────────────────────────────────────────────── */
     _showError(msg) {
