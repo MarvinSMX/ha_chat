@@ -8,8 +8,11 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" />
     <style>
       :host { display: block; height: 100%; box-sizing: border-box; }
-      .container { height: 100%; display: flex; flex-direction: column; padding: 16px; box-sizing: border-box; background: #1c1c1c; color: #e0e0e0; }
-      .thread { flex: 1; overflow-y: auto; margin-bottom: 20px; min-height: 0; }
+      .container { height: 100%; display: flex; flex-direction: column; align-items: center; padding: 16px; box-sizing: border-box; background: #1c1c1c; color: #e0e0e0; }
+      .chat-inner { width: 100%; max-width: 620px; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+      .thread { flex: 1; overflow-y: auto; margin-bottom: 16px; min-height: 0; }
+      .input-row { width: 100%; max-width: 620px; margin: 0 auto; }
+      .thread { width: 100%; max-width: 620px; margin-left: auto; margin-right: auto; }
       .msg { margin: 10px 0; padding: 12px 16px; border-radius: 18px; max-width: 85%; line-height: 1.5; }
       .msg.user { background: #009AC7; color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
       .msg.assistant { background: #2d2d2d; border: 1px solid #3a3a3a; border-bottom-left-radius: 4px; }
@@ -33,6 +36,9 @@
       .actions button.entity-btn.entity-btn-on { background: #009AC7; color: #fff; border-color: #009AC7; }
       .actions button.entity-btn.entity-btn-off { background: transparent; color: #888; border-color: #555; }
       .msg .content button.entity-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+      .prompt-suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px 0; }
+      .prompt-suggestion { padding: 6px 12px; border: 1px solid #3f3f3f; border-radius: 999px; background: #242424; color: #cfcfcf; font-size: 0.85rem; cursor: pointer; transition: background 0.2s, border-color 0.2s; }
+      .prompt-suggestion:hover { background: #2f2f2f; border-color: #009AC7; color: #fff; }
       .input-wrapper { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 20px; background: #2d2d2d; border: 1px solid #3a3a3a; border-radius: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.2); }
       .input-wrapper:focus-within { border-color: #009AC7; box-shadow: 0 0 0 1px #009AC7; }
       .input-row input { flex: 1; min-width: 0; padding: 12px 4px 12px 0; background: transparent; border: none; color: #e0e0e0; font-size: 1rem; outline: none; }
@@ -49,9 +55,10 @@
       .typing-indicator span:nth-child(3) { animation-delay: 0.2s; }
       @keyframes typing { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; } 40% { transform: scale(1); opacity: 1; } }
     </style>
-    <div class="container">
+      <div class="container">
       <div class="thread" id="thread"></div>
       <div class="input-row">
+        <div class="prompt-suggestions" id="prompt-suggestions"></div>
         <div class="input-wrapper">
           <input type="text" id="input" placeholder="Nachricht eingeben..." autocomplete="off" />
           <button type="button" class="send-btn" id="send" title="Senden" aria-label="Senden">
@@ -109,13 +116,41 @@
       this.attachShadow({ mode: 'open' });
       this.shadowRoot.appendChild(template.content.cloneNode(true));
       this._thread = [];
+      this._promptSuggestions = [
+        'Licht im Wohnzimmer einschalten',
+        'Wie ist der Status der Heizung?',
+        'Welche Geräte sind aktuell aktiv?',
+        'Starte die Abendroutine'
+      ];
     }
 
     connectedCallback() {
       var sendBtn = this.shadowRoot.getElementById('send');
       var input = this.shadowRoot.getElementById('input');
+      var suggestionWrap = this.shadowRoot.getElementById('prompt-suggestions');
+      this._renderPromptSuggestions();
       sendBtn.addEventListener('click', function () { this._send(); }.bind(this));
       input.addEventListener('keydown', function (e) { if (e.key === 'Enter') this._send(); }.bind(this));
+      suggestionWrap.addEventListener('click', function (e) {
+        var btn = e.target.closest('button[data-prompt]');
+        if (!btn) return;
+        input.value = btn.getAttribute('data-prompt') || '';
+        input.focus();
+      });
+    }
+
+    _renderPromptSuggestions() {
+      var suggestionWrap = this.shadowRoot.getElementById('prompt-suggestions');
+      if (!suggestionWrap) return;
+      suggestionWrap.innerHTML = '';
+      this._promptSuggestions.forEach(function (text) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'prompt-suggestion';
+        btn.setAttribute('data-prompt', text);
+        btn.textContent = text;
+        suggestionWrap.appendChild(btn);
+      });
     }
 
     _addMessage(role, content, extra) {
