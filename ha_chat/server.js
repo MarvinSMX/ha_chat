@@ -91,7 +91,7 @@ async function getGraphToken() {
     access_token: data.access_token,
     expires_at:   Date.now() + (data.expires_in || 3600) * 1000,
   };
-  console.log('[HA Chat] Graph Access-Token (Client Credentials) erhalten');
+  console.log('[HA Chat] Graph Access-Token (Client Credentials) erhalten, scope=' + (data.scope || '(kein scope im Response)'));
   return _graphTokenCache.access_token;
 }
 
@@ -345,12 +345,20 @@ const server = http.createServer(async (req, res) => {
     }
     try {
       const token = await getGraphToken();
-      const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
-      const imgRes = await fetch(imageUrl, { headers });
+      if (!token) {
+        console.log('[HA Chat] proxy_image: kein Token verfügbar (Credentials prüfen)');
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Kein Graph-Token (Credentials konfiguriert?)' }));
+        return;
+      }
+      console.log('[HA Chat] proxy_image → GET ' + imageUrl.slice(0, 120));
+      const imgRes = await fetch(imageUrl, { headers: { 'Authorization': 'Bearer ' + token } });
       if (!imgRes.ok) {
+        const errBody = await imgRes.text().catch(() => '');
         console.log('[HA Chat] proxy_image ' + imgRes.status + ' für ' + imageUrl.slice(0, 80));
+        console.log('[HA Chat] proxy_image Graph-Fehler:', errBody.slice(0, 500));
         res.writeHead(imgRes.status, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'HTTP ' + imgRes.status }));
+        res.end(JSON.stringify({ error: 'HTTP ' + imgRes.status, detail: errBody.slice(0, 300) }));
         return;
       }
       const contentType = imgRes.headers.get('content-type') || 'image/png';
