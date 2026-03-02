@@ -89,7 +89,11 @@
       .send-btn:disabled { opacity: .45; cursor: not-allowed; }
       .send-btn svg { width: 19px; height: 19px; }
       .error { color: #ff8a80; margin-top: 8px; font-size: .88em; }
+      .content img.chat-img { display: block; max-width: 100%; max-height: 360px; border-radius: 10px; margin: 6px 0; cursor: zoom-in; object-fit: contain; background: #1a1a1a; }
+      .img-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.82); z-index: 200; display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
+      .img-lightbox img { max-width: 92vw; max-height: 88vh; border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,.7); }
     </style>
+    <div class="img-lightbox" id="img-lightbox" style="display:none"><img id="img-lightbox-img" src="" alt=""></div>
     <div class="container">
       <div class="chat-inner">
         <div class="thread" id="thread"><div class="msg-col" id="msg-col"></div></div>
@@ -123,17 +127,22 @@
       .replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  /* ── Inline-Markdown: fett, kursiv, code, links ───────────────────── */
+  /* ── Inline-Markdown: fett, kursiv, code, [img:"url"], links ─────── */
   function processInline(text) {
     var out = '';
-    var re = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`|\[([^\]]*)\]\(([^)]+)\))/g;
+    // [img:"url"] vor normalem Link-Pattern prüfen
+    var re = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`|\[img:"([^"]+)"\]|\[([^\]]*)\]\(([^)]+)\))/g;
     var last = 0, m;
     while ((m = re.exec(text)) !== null) {
       out += escapeHtml(text.slice(last, m.index));
       if      (m[2] !== undefined) out += '<strong>' + escapeHtml(m[2]) + '</strong>';
       else if (m[3] !== undefined) out += '<em>' + escapeHtml(m[3]) + '</em>';
       else if (m[4] !== undefined) out += '<code>' + escapeHtml(m[4]) + '</code>';
-      else                         out += '<a href="' + escapeAttr(m[6]) + '" target="_blank" rel="noopener" class="badge content-link">' + escapeHtml(m[5]) + '</a>';
+      else if (m[5] !== undefined) {
+        var proxySrc = apiBase() + '/api/proxy_image?url=' + encodeURIComponent(m[5]);
+        out += '<img class="chat-img" src="' + escapeAttr(proxySrc) + '" alt="Bild" loading="lazy">';
+      }
+      else out += '<a href="' + escapeAttr(m[7]) + '" target="_blank" rel="noopener" class="badge content-link">' + escapeHtml(m[6]) + '</a>';
       last = re.lastIndex;
     }
     out += escapeHtml(text.slice(last));
@@ -248,10 +257,23 @@
       sendBtn.addEventListener('click',  function () { self._send(); });
       input.addEventListener('keydown',  function (e) { if (e.key === 'Enter') self._send(); });
 
-      /* Event-Delegation auf Thread – verhindert doppelte Listener */
+      /* Lightbox */
+      var lightbox    = this.shadowRoot.getElementById('img-lightbox');
+      var lightboxImg = this.shadowRoot.getElementById('img-lightbox-img');
       threadEl.addEventListener('click', function (e) {
+        var img = e.target.closest('img.chat-img');
+        if (img) {
+          lightboxImg.src = img.src;
+          lightboxImg.alt = img.alt;
+          lightbox.style.display = 'flex';
+          return;
+        }
         var ub = e.target.closest('button[data-utterance]');
         if (ub) { self._runAction(ub.dataset.utterance); }
+      });
+      lightbox.addEventListener('click', function () {
+        lightbox.style.display = 'none';
+        lightboxImg.src = '';
       });
     }
 
@@ -307,11 +329,11 @@
     _setLastAssistantMessage(content, sources, actions) {
       for (var i = this._thread.length - 1; i >= 0; i--) {
         if (this._thread[i].role === 'assistant') {
-          this._thread[i].sources = sources || [];
-          this._thread[i].actions = actions || [];
-          this._thread[i].pending = false;
+          this._thread[i].sources  = sources || [];
+          this._thread[i].actions  = actions || [];
+          this._thread[i].pending  = false;
           this._thread[i].streaming = !!content;
-          this._thread[i].content = '';
+          this._thread[i].content  = '';
           this._render();
           if (content) this._streamInto(i, content);
           return;
@@ -379,9 +401,14 @@
         if (m.pending) {
           div.innerHTML = '<div class="content"><span class="typing-indicator"><span></span><span></span><span></span></span></div>';
         } else {
-          var bodyHtml = m.streaming
-            ? escapeHtml(m.content) + '<span class="stream-cursor"></span>'
-            : (m.role === 'assistant' ? renderMarkdown(m.content) : escapeHtml(m.content));
+          var bodyHtml;
+          if (m.streaming) {
+            bodyHtml = renderMarkdown(m.content) + '<span class="stream-cursor"></span>';
+          } else if (m.role === 'assistant') {
+            bodyHtml = renderMarkdown(m.content);
+          } else {
+            bodyHtml = escapeHtml(m.content);
+          }
           var html = '<div class="content">' + bodyHtml + '</div>';
           if (m.sources && m.sources.length) {
             html += '<div class="sources"><span class="sources-label">Quellen:</span>' +

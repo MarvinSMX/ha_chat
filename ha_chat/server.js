@@ -34,8 +34,11 @@ function getOptions() {
       : DEFAULT_SUGGESTIONS;
     return {
       n8n_inference_webhook_url: (opts.n8n_inference_webhook_url || '').trim().replace(/\/$/, ''),
-      ha_url: (opts.ha_url || '').trim().replace(/\/$/, ''),
-      ha_token: (opts.ha_token || '').trim(),
+      ha_url:                    (opts.ha_url                    || '').trim().replace(/\/$/, ''),
+      ha_token:                  (opts.ha_token                  || '').trim(),
+      graph_tenant_id:           (opts.graph_tenant_id           || '').trim(),
+      graph_client_id:           (opts.graph_client_id           || '').trim(),
+      graph_client_secret:       (opts.graph_client_secret       || '').trim(),
       prompt_suggestions: suggestions,
     };
   } catch (e) {
@@ -43,10 +46,44 @@ function getOptions() {
   }
   return {
     n8n_inference_webhook_url: (process.env.N8N_INFERENCE_WEBHOOK_URL || '').trim().replace(/\/$/, ''),
-    ha_url: (process.env.HA_URL || '').trim().replace(/\/$/, ''),
-    ha_token: (process.env.HA_TOKEN || '').trim(),
+    ha_url:                    (process.env.HA_URL                    || '').trim().replace(/\/$/, ''),
+    ha_token:                  (process.env.HA_TOKEN                  || '').trim(),
+    graph_tenant_id:           (process.env.GRAPH_TENANT_ID           || '').trim(),
+    graph_client_id:           (process.env.GRAPH_CLIENT_ID           || '').trim(),
+    graph_client_secret:       (process.env.GRAPH_CLIENT_SECRET       || '').trim(),
     prompt_suggestions: DEFAULT_SUGGESTIONS,
   };
+}
+
+/* ── MS Graph Token Cache ──────────────────────────────────────────── */
+let _graphToken = null;
+let _graphTokenExpiry = 0;
+
+async function getGraphToken() {
+  if (_graphToken && Date.now() < _graphTokenExpiry - 60000) return _graphToken;
+  const opts = getOptions();
+  if (!opts.graph_tenant_id || !opts.graph_client_id || !opts.graph_client_secret) return null;
+  const tokenUrl = 'https://login.microsoftonline.com/' + opts.graph_tenant_id + '/oauth2/v2.0/token';
+  const body = new URLSearchParams({
+    grant_type:    'client_credentials',
+    client_id:     opts.graph_client_id,
+    client_secret: opts.graph_client_secret,
+    scope:         'https://graph.microsoft.com/.default',
+  });
+  const r = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!data.access_token) {
+    console.log('[HA Chat] Graph Token Fehler:', JSON.stringify(data));
+    return null;
+  }
+  _graphToken = data.access_token;
+  _graphTokenExpiry = Date.now() + (data.expires_in || 3600) * 1000;
+  console.log('[HA Chat] Graph Token erneuert, gültig für ' + (data.expires_in || 3600) + 's');
+  return _graphToken;
 }
 
 function getInferenceUrl() {
@@ -276,6 +313,36 @@ const server = http.createServer(async (req, res) => {
     const actionPayload = { message: utterance };
     if (data.session_id) actionPayload.session_id = String(data.session_id);
     proxyToN8n(inferenceUrl, actionPayload, res, 'action');
+    return;
+  }
+
+  // Proxy: Bild via MS Graph Token abrufen
+  if (pathname === '/api/proxy_image' && req.method === 'GET') {
+    const imageUrl = (parsed.query && parsed.query.url) ? String(parsed.query.url).trim() : '';
+    if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'url fehlt oder ungültig' }));
+      return;
+    }
+    try {
+      const token = await getGraphToken();
+      const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+      const imgRes = await fetch(imageUrl, { headers });
+      if (!imgRes.ok) {
+        console.log('[HA Chat] proxy_image ' + imgRes.status + ' für ' + imageUrl.slice(0, 80));
+        res.writeHead(imgRes.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'HTTP ' + imgRes.status }));
+        return;
+      }
+      const contentType = imgRes.headers.get('content-type') || 'image/png';
+      const buf = await imgRes.arrayBuffer();
+      res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'private, max-age=3600' });
+      res.end(Buffer.from(buf));
+    } catch (e) {
+      console.log('[HA Chat] proxy_image Fehler:', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
     return;
   }
 
