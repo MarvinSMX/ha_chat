@@ -92,12 +92,16 @@
       .content img.chat-img { display: block; max-width: 100%; max-height: 360px; border-radius: 10px; margin: 6px 0; cursor: zoom-in; object-fit: contain; background: #1a1a1a; }
       .img-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.82); z-index: 200; display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
       .img-lightbox img { max-width: 92vw; max-height: 88vh; border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,.7); }
-      .graph-login-bar { display: flex; align-items: center; gap: 10px; padding: 7px 12px; background: #1e2a30; border: 1px solid #2a4a55; border-radius: 10px; margin-bottom: 10px; font-size: 0.83em; color: #aaa; }
+      .graph-login-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 9px 14px; background: #1e2a30; border: 1px solid #2a4a55; border-radius: 10px; margin-bottom: 10px; font-size: 0.83em; color: #aaa; }
       .graph-login-bar a { color: #009AC7; text-decoration: none; font-weight: 600; white-space: nowrap; }
       .graph-login-bar a:hover { text-decoration: underline; }
       .graph-login-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
       .graph-login-dot.ok  { background: #4caf50; }
       .graph-login-dot.err { background: #ff8a80; }
+      .graph-login-dot.spin { background: #f0b429; animation: spin-dot 1s linear infinite; }
+      @keyframes spin-dot { 0%{opacity:1}50%{opacity:.3}100%{opacity:1} }
+      .graph-user-code { font-family: monospace; font-size: 1.1em; letter-spacing: 2px; color: #fff; background: #0d1f26; padding: 2px 8px; border-radius: 6px; user-select: all; cursor: copy; }
+      .graph-login-btn { background: #009AC7; color: #fff; border: none; border-radius: 8px; padding: 3px 12px; font-size: 0.9em; cursor: pointer; font-family: inherit; }
     </style>
     <div class="img-lightbox" id="img-lightbox" style="display:none"><img id="img-lightbox-img" src="" alt=""></div>
     <div class="container">
@@ -443,7 +447,7 @@
       if (scrollBottom) threadEl.scrollTop = threadEl.scrollHeight;
     }
 
-    /* ── MS Graph Login-Status ──────────────────────────────────────── */
+    /* ── MS Graph Login-Status (Device Code Flow) ───────────────────── */
     _checkGraphStatus() {
       var self = this;
       var bar = this.shadowRoot.getElementById('graph-login-bar');
@@ -457,43 +461,66 @@
             bar.innerHTML = '<span class="graph-login-dot ok"></span>Microsoft Graph verbunden';
           } else {
             bar.innerHTML = '<span class="graph-login-dot err"></span>'
-              + 'Microsoft Graph nicht angemeldet – '
-              + '<button id="graph-login-btn" style="'
-              + 'background:#009AC7;color:#fff;border:none;border-radius:8px;padding:3px 12px;'
-              + 'font-size:0.9em;cursor:pointer;font-family:inherit;">Jetzt anmelden</button>';
-            var btn = bar.querySelector('#graph-login-btn');
-            if (btn) btn.addEventListener('click', function () { self._openGraphLogin(); });
+              + 'Microsoft Graph nicht angemeldet&nbsp;–&nbsp;'
+              + '<button class="graph-login-btn" id="graph-login-btn">Anmelden</button>';
+            bar.querySelector('#graph-login-btn').addEventListener('click', function () {
+              self._startDeviceLogin();
+            });
           }
         })
         .catch(function () { bar.style.display = 'none'; });
     }
 
-    _openGraphLogin() {
+    _startDeviceLogin() {
       var self = this;
-      var authUrl = apiBase() + '/api/graph_auth';
-      var popup = window.open(authUrl, 'graph_login',
-        'width=520,height=640,resizable=yes,scrollbars=yes,status=yes');
-      if (!popup) {
-        /* Popup blockiert – Fallback: gleicher Tab */
-        window.location.href = authUrl;
-        return;
-      }
-      /* Pollen bis Popup geschlossen oder Login erfolgreich */
-      var poll = setInterval(function () {
-        fetch(apiBase() + '/api/graph_status')
-          .then(function (r) { return r.json().catch(function () { return {}; }); })
-          .then(function (s) {
-            if (s.authenticated) {
+      var bar = this.shadowRoot.getElementById('graph-login-bar');
+      bar.innerHTML = '<span class="graph-login-dot spin"></span>Warte auf Microsoft…';
+
+      fetch(apiBase() + '/api/graph_device_start', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.error) {
+            bar.innerHTML = '<span class="graph-login-dot err"></span>Fehler: ' + d.error;
+            return;
+          }
+          /* Code anzeigen */
+          bar.innerHTML =
+            '<span class="graph-login-dot spin"></span>'
+            + 'Öffne <a href="' + d.verification_uri + '" target="_blank">' + d.verification_uri + '</a>'
+            + '&nbsp;und gib ein:&nbsp;<span class="graph-user-code" title="Klicken zum Kopieren">' + d.user_code + '</span>';
+
+          /* Code in Zwischenablage kopieren beim Klick */
+          var codeEl = bar.querySelector('.graph-user-code');
+          if (codeEl) codeEl.addEventListener('click', function () {
+            navigator.clipboard && navigator.clipboard.writeText(d.user_code).catch(function(){});
+          });
+
+          /* Pollen bis fertig */
+          var deadline = Date.now() + (d.expires_in || 900) * 1000;
+          var interval = (d.interval || 5) * 1000;
+          var poll = setInterval(function () {
+            if (Date.now() > deadline) {
               clearInterval(poll);
-              if (popup && !popup.closed) popup.close();
               self._checkGraphStatus();
-            } else if (popup && popup.closed) {
-              clearInterval(poll);
-              self._checkGraphStatus();
+              return;
             }
-          })
-          .catch(function () {});
-      }, 2000);
+            fetch(apiBase() + '/api/graph_device_poll', { method: 'POST' })
+              .then(function (r) { return r.json(); })
+              .then(function (p) {
+                if (p.status === 'ok') {
+                  clearInterval(poll);
+                  self._checkGraphStatus();
+                } else if (p.status === 'error' || p.status === 'expired') {
+                  clearInterval(poll);
+                  self._checkGraphStatus();
+                }
+              })
+              .catch(function () {});
+          }, interval);
+        })
+        .catch(function (e) {
+          bar.innerHTML = '<span class="graph-login-dot err"></span>Fehler beim Starten des Logins';
+        });
     }
 
     /* ── Fehler ────────────────────────────────────────────────────── */
