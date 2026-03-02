@@ -93,6 +93,8 @@
       .img-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.82); z-index: 200; display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
       .img-lightbox img { max-width: 92vw; max-height: 88vh; border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,.7); }
       .graph-login-bar { display: flex; align-items: center; gap: 10px; padding: 7px 12px; background: #1e2a30; border: 1px solid #2a4a55; border-radius: 10px; margin-bottom: 10px; font-size: 0.83em; color: #aaa; }
+      .graph-login-bar a { color: #009AC7; text-decoration: none; font-weight: 600; white-space: nowrap; }
+      .graph-login-bar a:hover { text-decoration: underline; }
       .graph-login-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
       .graph-login-dot.ok  { background: #4caf50; }
       .graph-login-dot.err { background: #ff8a80; }
@@ -441,8 +443,9 @@
       if (scrollBottom) threadEl.scrollTop = threadEl.scrollHeight;
     }
 
-    /* ── MS Graph Status (Application Permissions – kein Login nötig) ── */
+    /* ── MS Graph Login-Status ──────────────────────────────────────── */
     _checkGraphStatus() {
+      var self = this;
       var bar = this.shadowRoot.getElementById('graph-login-bar');
       if (!bar) return;
       fetch(apiBase() + '/api/graph_status')
@@ -453,10 +456,44 @@
           if (s.authenticated) {
             bar.innerHTML = '<span class="graph-login-dot ok"></span>Microsoft Graph verbunden';
           } else {
-            bar.innerHTML = '<span class="graph-login-dot err"></span>Microsoft Graph: Verbindung wird hergestellt…';
+            bar.innerHTML = '<span class="graph-login-dot err"></span>'
+              + 'Microsoft Graph nicht angemeldet – '
+              + '<button id="graph-login-btn" style="'
+              + 'background:#009AC7;color:#fff;border:none;border-radius:8px;padding:3px 12px;'
+              + 'font-size:0.9em;cursor:pointer;font-family:inherit;">Jetzt anmelden</button>';
+            var btn = bar.querySelector('#graph-login-btn');
+            if (btn) btn.addEventListener('click', function () { self._openGraphLogin(); });
           }
         })
         .catch(function () { bar.style.display = 'none'; });
+    }
+
+    _openGraphLogin() {
+      var self = this;
+      var authUrl = apiBase() + '/api/graph_auth';
+      var popup = window.open(authUrl, 'graph_login',
+        'width=520,height=640,resizable=yes,scrollbars=yes,status=yes');
+      if (!popup) {
+        /* Popup blockiert – Fallback: gleicher Tab */
+        window.location.href = authUrl;
+        return;
+      }
+      /* Pollen bis Popup geschlossen oder Login erfolgreich */
+      var poll = setInterval(function () {
+        fetch(apiBase() + '/api/graph_status')
+          .then(function (r) { return r.json().catch(function () { return {}; }); })
+          .then(function (s) {
+            if (s.authenticated) {
+              clearInterval(poll);
+              if (popup && !popup.closed) popup.close();
+              self._checkGraphStatus();
+            } else if (popup && popup.closed) {
+              clearInterval(poll);
+              self._checkGraphStatus();
+            }
+          })
+          .catch(function () {});
+      }, 2000);
     }
 
     /* ── Fehler ────────────────────────────────────────────────────── */
