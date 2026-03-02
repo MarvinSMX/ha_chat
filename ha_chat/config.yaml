@@ -15,6 +15,7 @@ ports:
 ingress: true
 options:
   n8n_inference_webhook_url: ""
+  n8n_sync_webhook_url: ""
   ha_url: ""
   ha_token: ""
   graph_tenant_id: ""
@@ -27,6 +28,7 @@ options:
     - "Welche Geräte sind aktiv?"
 schema:
   n8n_inference_webhook_url: str
+  n8n_sync_webhook_url: str
   ha_url: str
   ha_token: str
   graph_tenant_id: str

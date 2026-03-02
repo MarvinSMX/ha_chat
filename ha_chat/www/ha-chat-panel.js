@@ -20,6 +20,7 @@
       *, *::before, *::after { box-sizing: border-box; }
       :host { display: block; height: 100%; }
       .container { height: 100%; display: flex; flex-direction: column; align-items: center; padding: 16px; background: #1c1c1c; color: #e0e0e0; font-family: inherit; }
+      .top-bar { width: 100%; display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-bottom: 10px; min-height: 32px; flex-shrink: 0; }
       .chat-inner { width: 100%; flex: 1; display: flex; flex-direction: column; min-height: 0; }
 
       /* ── Thread: volle Breite, Scrollbar am Rand ── */
@@ -89,26 +90,45 @@
       .send-btn:disabled { opacity: .45; cursor: not-allowed; }
       .send-btn svg { width: 19px; height: 19px; }
       .error { color: #ff8a80; margin-top: 8px; font-size: .88em; }
-      .content img.chat-img { display: block; max-width: 100%; max-height: 360px; border-radius: 10px; margin: 6px 0; cursor: zoom-in; object-fit: contain; background: #1a1a1a; }
+      .img-wrapper { position: relative; display: inline-block; max-width: 100%; margin: 6px 0; border-radius: 10px; overflow: hidden; }
+      .img-skeleton { width: 320px; height: 200px; max-width: 100%; border-radius: 10px; background: linear-gradient(90deg,#1e2a30 25%,#263540 50%,#1e2a30 75%); background-size: 200% 100%; animation: skel-slide 1.4s ease-in-out infinite; }
+      @keyframes skel-slide { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+      .content img.chat-img { display: block; max-width: 100%; max-height: 360px; border-radius: 10px; cursor: zoom-in; object-fit: contain; opacity: 0; transition: opacity .3s; }
+      .img-wrapper.loaded .img-skeleton { display: none; }
+      .img-wrapper.loaded img.chat-img { opacity: 1; }
       .img-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.82); z-index: 200; display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
       .img-lightbox img { max-width: 92vw; max-height: 88vh; border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,.7); }
-      .graph-login-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 9px 14px; background: #1e2a30; border: 1px solid #2a4a55; border-radius: 10px; margin-bottom: 10px; font-size: 0.83em; color: #aaa; }
-      .graph-login-bar a { color: #009AC7; text-decoration: none; font-weight: 600; white-space: nowrap; }
-      .graph-login-bar a:hover { text-decoration: underline; }
-      .graph-login-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+      .graph-status { display: flex; align-items: center; gap: 6px; font-size: 0.8em; color: #aaa; white-space: nowrap; }
+      .graph-status a { color: #009AC7; text-decoration: none; font-weight: 600; }
+      .graph-status a:hover { text-decoration: underline; }
+      .graph-login-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
       .graph-login-dot.ok  { background: #4caf50; }
       .graph-login-dot.err { background: #ff8a80; }
       .graph-login-dot.spin { background: #f0b429; animation: spin-dot 1s linear infinite; }
       @keyframes spin-dot { 0%{opacity:1}50%{opacity:.3}100%{opacity:1} }
-      .graph-user-code { font-family: monospace; font-size: 1.1em; letter-spacing: 2px; color: #fff; background: #0d1f26; padding: 2px 8px; border-radius: 6px; user-select: all; cursor: copy; }
-      .graph-login-btn { background: #009AC7; color: #fff; border: none; border-radius: 8px; padding: 3px 12px; font-size: 0.9em; cursor: pointer; font-family: inherit; }
+      .graph-user-code { font-family: monospace; font-size: 1.05em; letter-spacing: 2px; color: #fff; background: #0d1f26; padding: 1px 7px; border-radius: 5px; user-select: all; cursor: copy; }
+      .graph-login-btn { background: #009AC7; color: #fff; border: none; border-radius: 8px; padding: 2px 10px; font-size: 0.85em; cursor: pointer; font-family: inherit; }
+      .sync-btn { display: flex; align-items: center; gap: 5px; background: #2d2d2d; border: 1px solid #3a3a3a; color: #aaa; border-radius: 8px; padding: 4px 11px; font-size: 0.8em; font-family: inherit; cursor: pointer; transition: border-color .15s, color .15s; white-space: nowrap; }
+      .sync-btn:hover:not(:disabled) { border-color: #009AC7; color: #009AC7; }
+      .sync-btn:disabled { opacity: .45; cursor: not-allowed; }
+      .sync-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+      @keyframes sync-spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+      .sync-btn.syncing svg { animation: sync-spin .8s linear infinite; }
     </style>
     <div class="img-lightbox" id="img-lightbox" style="display:none"><img id="img-lightbox-img" src="" alt=""></div>
     <div class="container">
+      <div class="top-bar">
+        <div id="graph-status" style="display:none" class="graph-status"></div>
+        <button id="sync-btn" class="sync-btn" style="display:none" title="Doku-Sync starten">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
+          </svg>
+          Sync
+        </button>
+      </div>
       <div class="chat-inner">
         <div class="thread" id="thread"><div class="msg-col" id="msg-col"></div></div>
         <div class="input-area">
-          <div id="graph-login-bar" style="display:none" class="graph-login-bar"></div>
           <div class="prompt-suggestions" id="prompt-suggestions"></div>
           <div class="input-wrapper">
             <input type="text" id="input" placeholder="Nachricht eingeben …" autocomplete="off" />
@@ -151,7 +171,10 @@
       else if (m[4] !== undefined) out += '<code>' + escapeHtml(m[4]) + '</code>';
       else if (m[5] !== undefined) {
         var proxySrc = apiBase() + '/api/proxy_image?url=' + encodeURIComponent(m[5]);
-        out += '<img class="chat-img" src="' + escapeAttr(proxySrc) + '" alt="Bild" loading="lazy">';
+        out += '<span class="img-wrapper">'
+          + '<span class="img-skeleton"></span>'
+          + '<img class="chat-img" src="' + escapeAttr(proxySrc) + '" alt="Bild" loading="lazy">'
+          + '</span>';
       }
       else out += '<a href="' + escapeAttr(m[7]) + '" target="_blank" rel="noopener" class="badge content-link">' + escapeHtml(m[6]) + '</a>';
       last = re.lastIndex;
@@ -253,7 +276,7 @@
       var sendBtn = this.shadowRoot.getElementById('send');
       var threadEl = this.shadowRoot.getElementById('thread');
 
-      /* Prompt-Vorschläge: zuerst Fallback rendern, dann aus /config.json laden */
+      /* Prompt-Vorschläge + Sync-Button: aus /config.json laden */
       this._renderSuggestions(PROMPT_SUGGESTIONS, input);
       fetch(apiBase() + '/config.json')
         .then(function (r) { return r.json().catch(function () { return {}; }); })
@@ -261,8 +284,15 @@
           var list = cfg && Array.isArray(cfg.prompt_suggestions) && cfg.prompt_suggestions.length
             ? cfg.prompt_suggestions : null;
           if (list) self._renderSuggestions(list, input);
+          /* Sync-Button anzeigen falls konfiguriert */
+          var syncBtn = self.shadowRoot.getElementById('sync-btn');
+          if (syncBtn && cfg && cfg.sync_enabled) syncBtn.style.display = 'flex';
         })
         .catch(function () {});
+
+      /* Sync-Button */
+      var syncBtn = this.shadowRoot.getElementById('sync-btn');
+      if (syncBtn) syncBtn.addEventListener('click', function () { self._triggerSync(); });
 
       /* MS Graph Login-Status prüfen */
       this._checkGraphStatus();
@@ -270,6 +300,21 @@
       /* Senden */
       sendBtn.addEventListener('click',  function () { self._send(); });
       input.addEventListener('keydown',  function (e) { if (e.key === 'Enter') self._send(); });
+
+      /* Skeleton ausblenden sobald Bild geladen */
+      threadEl.addEventListener('load', function (e) {
+        if (e.target && e.target.classList && e.target.classList.contains('chat-img')) {
+          var wrapper = e.target.closest('.img-wrapper');
+          if (wrapper) wrapper.classList.add('loaded');
+        }
+      }, true);
+      /* Skeleton auch bei Fehler entfernen */
+      threadEl.addEventListener('error', function (e) {
+        if (e.target && e.target.classList && e.target.classList.contains('chat-img')) {
+          var wrapper = e.target.closest('.img-wrapper');
+          if (wrapper) { wrapper.classList.add('loaded'); e.target.style.opacity = '0.3'; }
+        }
+      }, true);
 
       /* Lightbox */
       var lightbox    = this.shadowRoot.getElementById('img-lightbox');
@@ -447,10 +492,10 @@
       if (scrollBottom) threadEl.scrollTop = threadEl.scrollHeight;
     }
 
-    /* ── MS Graph Login-Status (Device Code Flow) ───────────────────── */
+    /* ── MS Graph Status (Header, Device Code Flow) ─────────────────── */
     _checkGraphStatus() {
       var self = this;
-      var bar = this.shadowRoot.getElementById('graph-login-bar');
+      var bar = this.shadowRoot.getElementById('graph-status');
       if (!bar) return;
       fetch(apiBase() + '/api/graph_status')
         .then(function (r) { return r.json().catch(function () { return {}; }); })
@@ -458,11 +503,10 @@
           if (!s.configured) { bar.style.display = 'none'; return; }
           bar.style.display = 'flex';
           if (s.authenticated) {
-            bar.innerHTML = '<span class="graph-login-dot ok"></span>Microsoft Graph verbunden';
+            bar.innerHTML = '<span class="graph-login-dot ok"></span>Graph';
           } else {
             bar.innerHTML = '<span class="graph-login-dot err"></span>'
-              + 'Microsoft Graph nicht angemeldet&nbsp;–&nbsp;'
-              + '<button class="graph-login-btn" id="graph-login-btn">Anmelden</button>';
+              + '<button class="graph-login-btn" id="graph-login-btn">Graph anmelden</button>';
             bar.querySelector('#graph-login-btn').addEventListener('click', function () {
               self._startDeviceLogin();
             });
@@ -473,8 +517,8 @@
 
     _startDeviceLogin() {
       var self = this;
-      var bar = this.shadowRoot.getElementById('graph-login-bar');
-      bar.innerHTML = '<span class="graph-login-dot spin"></span>Warte auf Microsoft…';
+      var bar = this.shadowRoot.getElementById('graph-status');
+      bar.innerHTML = '<span class="graph-login-dot spin"></span>Warte…';
 
       fetch(apiBase() + '/api/graph_device_start', { method: 'POST' })
         .then(function (r) { return r.json(); })
@@ -483,34 +527,24 @@
             bar.innerHTML = '<span class="graph-login-dot err"></span>Fehler: ' + d.error;
             return;
           }
-          /* Code anzeigen */
           bar.innerHTML =
             '<span class="graph-login-dot spin"></span>'
-            + 'Öffne <a href="' + d.verification_uri + '" target="_blank">' + d.verification_uri + '</a>'
-            + '&nbsp;und gib ein:&nbsp;<span class="graph-user-code" title="Klicken zum Kopieren">' + d.user_code + '</span>';
+            + '<a href="' + d.verification_uri + '" target="_blank">' + d.verification_uri + '</a>'
+            + '&nbsp;Code:&nbsp;<span class="graph-user-code" title="Klicken zum Kopieren">' + d.user_code + '</span>';
 
-          /* Code in Zwischenablage kopieren beim Klick */
           var codeEl = bar.querySelector('.graph-user-code');
           if (codeEl) codeEl.addEventListener('click', function () {
             navigator.clipboard && navigator.clipboard.writeText(d.user_code).catch(function(){});
           });
 
-          /* Pollen bis fertig */
           var deadline = Date.now() + (d.expires_in || 900) * 1000;
           var interval = (d.interval || 5) * 1000;
           var poll = setInterval(function () {
-            if (Date.now() > deadline) {
-              clearInterval(poll);
-              self._checkGraphStatus();
-              return;
-            }
+            if (Date.now() > deadline) { clearInterval(poll); self._checkGraphStatus(); return; }
             fetch(apiBase() + '/api/graph_device_poll', { method: 'POST' })
               .then(function (r) { return r.json(); })
               .then(function (p) {
-                if (p.status === 'ok') {
-                  clearInterval(poll);
-                  self._checkGraphStatus();
-                } else if (p.status === 'error' || p.status === 'expired') {
+                if (p.status === 'ok' || p.status === 'error' || p.status === 'expired') {
                   clearInterval(poll);
                   self._checkGraphStatus();
                 }
@@ -518,8 +552,30 @@
               .catch(function () {});
           }, interval);
         })
+        .catch(function () {
+          bar.innerHTML = '<span class="graph-login-dot err"></span>Fehler';
+        });
+    }
+
+    /* ── Manueller Doku-Sync ─────────────────────────────────────────── */
+    _triggerSync() {
+      var btn = this.shadowRoot.getElementById('sync-btn');
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      btn.classList.add('syncing');
+      fetch(apiBase() + '/api/sync', { method: 'POST' })
+        .then(function (r) { return r.json().catch(function () { return {}; }); })
+        .then(function (d) {
+          btn.classList.remove('syncing');
+          btn.disabled = false;
+          btn.title = d.ok ? 'Sync erfolgreich ✓' : ('Sync Fehler: ' + (d.error || d.status));
+          setTimeout(function () { btn.title = 'Doku-Sync starten'; }, 4000);
+        })
         .catch(function (e) {
-          bar.innerHTML = '<span class="graph-login-dot err"></span>Fehler beim Starten des Logins';
+          btn.classList.remove('syncing');
+          btn.disabled = false;
+          btn.title = 'Sync Fehler: ' + e.message;
+          setTimeout(function () { btn.title = 'Doku-Sync starten'; }, 4000);
         });
     }
 

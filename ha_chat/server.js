@@ -6,6 +6,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
+const crypto = require('crypto');
 
 // HTTPS-Aufrufe zu N8N: Zertifikatsprüfung überspringen (z. B. selbstsigniert / lokales N8N)
 if (process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '1') {
@@ -13,10 +14,15 @@ if (process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '1') {
   console.log('[HA Chat] NODE_TLS_REJECT_UNAUTHORIZED=0 (SSL-Verifikation für Webhook deaktiviert)');
 }
 
-const DATA_DIR = process.env.DATA_DIR || '/data';
+const DATA_DIR   = process.env.DATA_DIR || '/data';
 const OPTIONS_PATH = path.join(DATA_DIR, 'options.json');
-const WWW_DIR = path.join(__dirname, 'www');
-const PORT = parseInt(process.env.SUPERVISOR_INGRESS_PORT || process.env.PORT || '8099', 10);
+const WWW_DIR    = path.join(__dirname, 'www');
+const PORT       = parseInt(process.env.SUPERVISOR_INGRESS_PORT || process.env.PORT || '8099', 10);
+const IMG_CACHE_DIR = path.join(DATA_DIR, 'img_cache');
+const IMG_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 Tage
+
+/* Cache-Verzeichnis anlegen */
+try { fs.mkdirSync(IMG_CACHE_DIR, { recursive: true }); } catch (_) {}
 
 const DEFAULT_SUGGESTIONS = [
   'Was kann ich dich fragen?',
@@ -34,6 +40,7 @@ function getOptions() {
       : DEFAULT_SUGGESTIONS;
     return {
       n8n_inference_webhook_url: (opts.n8n_inference_webhook_url || '').trim().replace(/\/$/, ''),
+      n8n_sync_webhook_url:      (opts.n8n_sync_webhook_url      || '').trim().replace(/\/$/, ''),
       ha_url:                    (opts.ha_url                    || '').trim().replace(/\/$/, ''),
       ha_token:                  (opts.ha_token                  || '').trim(),
       graph_tenant_id:           (opts.graph_tenant_id           || '').trim(),
@@ -46,6 +53,7 @@ function getOptions() {
   }
   return {
     n8n_inference_webhook_url: (process.env.N8N_INFERENCE_WEBHOOK_URL || '').trim().replace(/\/$/, ''),
+    n8n_sync_webhook_url:      (process.env.N8N_SYNC_WEBHOOK_URL      || '').trim().replace(/\/$/, ''),
     ha_url:                    (process.env.HA_URL                    || '').trim().replace(/\/$/, ''),
     ha_token:                  (process.env.HA_TOKEN                  || '').trim(),
     graph_tenant_id:           (process.env.GRAPH_TENANT_ID           || '').trim(),
@@ -254,8 +262,37 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       n8n_inference_webhook_url: opts.n8n_inference_webhook_url,
+      sync_enabled: !!opts.n8n_sync_webhook_url,
       prompt_suggestions: opts.prompt_suggestions,
     }));
+    return;
+  }
+
+  // Manueller Doku-Sync
+  if (pathname === '/api/sync' && req.method === 'POST') {
+    const opts = getOptions();
+    if (!opts.n8n_sync_webhook_url) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'n8n_sync_webhook_url nicht konfiguriert' }));
+      return;
+    }
+    console.log('[HA Chat] sync → POST ' + opts.n8n_sync_webhook_url);
+    fetch(opts.n8n_sync_webhook_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trigger: 'manual', ts: Date.now() }),
+    })
+      .then(r => r.text().then(t => ({ ok: r.ok, status: r.status, t })))
+      .then(({ ok, status, t }) => {
+        console.log('[HA Chat] sync ← ' + status + (t ? ' ' + t.slice(0, 100) : ''));
+        res.writeHead(ok ? 200 : status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok, status }));
+      })
+      .catch(e => {
+        console.log('[HA Chat] sync Fehler:', e.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      });
     return;
   }
 
@@ -456,30 +493,72 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ error: 'url fehlt oder ungültig' }));
       return;
     }
+
+    /* ── Disk-Cache prüfen ─────────────────────────────────────── */
+    const cacheKey  = crypto.createHash('sha256').update(imageUrl).digest('hex');
+    const cacheFile = path.join(IMG_CACHE_DIR, cacheKey);
+    const metaFile  = cacheFile + '.meta';
+    const sendCached = () => {
+      try {
+        const meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8'));
+        const data = fs.readFileSync(cacheFile);
+        res.writeHead(200, {
+          'Content-Type':  meta.contentType,
+          'Cache-Control': 'private, max-age=604800',
+          'X-Cache':       'HIT',
+        });
+        res.end(data);
+        return true;
+      } catch (_) { return false; }
+    };
+
+    try {
+      const meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8'));
+      if (meta.cachedAt && Date.now() - meta.cachedAt < IMG_CACHE_TTL) {
+        if (sendCached()) { return; }
+      }
+    } catch (_) { /* kein Cache */ }
+
+    /* ── Graph-Fetch ───────────────────────────────────────────── */
     try {
       const token = await getGraphToken();
       if (!token) {
-        console.log('[HA Chat] proxy_image: kein Token verfügbar (Credentials prüfen)');
+        /* Token fehlt – trotzdem gecachte Version liefern falls vorhanden */
+        if (sendCached()) return;
+        console.log('[HA Chat] proxy_image: kein Token verfügbar');
         res.writeHead(503, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Kein Graph-Token (Credentials konfiguriert?)' }));
+        res.end(JSON.stringify({ error: 'Kein Graph-Token – bitte einloggen' }));
         return;
       }
-      console.log('[HA Chat] proxy_image → GET ' + imageUrl.slice(0, 120));
+      console.log('[HA Chat] proxy_image → GET (fetch) ' + imageUrl.slice(0, 100));
       const imgRes = await fetch(imageUrl, { headers: { 'Authorization': 'Bearer ' + token } });
       if (!imgRes.ok) {
         const errBody = await imgRes.text().catch(() => '');
-        console.log('[HA Chat] proxy_image ' + imgRes.status + ' für ' + imageUrl.slice(0, 80));
-        console.log('[HA Chat] proxy_image Graph-Fehler:', errBody.slice(0, 500));
+        console.log('[HA Chat] proxy_image ' + imgRes.status + ' Graph-Fehler:', errBody.slice(0, 300));
+        /* Bei 401/403: gecachte Version nutzen falls noch vorhanden */
+        if ((imgRes.status === 401 || imgRes.status === 403) && sendCached()) return;
         res.writeHead(imgRes.status, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'HTTP ' + imgRes.status, detail: errBody.slice(0, 300) }));
+        res.end(JSON.stringify({ error: 'HTTP ' + imgRes.status, detail: errBody.slice(0, 200) }));
         return;
       }
       const contentType = imgRes.headers.get('content-type') || 'image/png';
-      const buf = await imgRes.arrayBuffer();
-      res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'private, max-age=3600' });
-      res.end(Buffer.from(buf));
+      const buf = Buffer.from(await imgRes.arrayBuffer());
+
+      /* ── Im Cache speichern ──────────────────────────────────── */
+      try {
+        fs.writeFileSync(cacheFile, buf);
+        fs.writeFileSync(metaFile, JSON.stringify({ contentType, cachedAt: Date.now(), url: imageUrl }));
+      } catch (e) { console.log('[HA Chat] proxy_image Cache-Schreib-Fehler:', e.message); }
+
+      res.writeHead(200, {
+        'Content-Type':  contentType,
+        'Cache-Control': 'private, max-age=604800',
+        'X-Cache':       'MISS',
+      });
+      res.end(buf);
     } catch (e) {
       console.log('[HA Chat] proxy_image Fehler:', e.message);
+      if (sendCached()) return;
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: e.message }));
     }
