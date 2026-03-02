@@ -55,35 +55,94 @@ function getOptions() {
   };
 }
 
-/* ── MS Graph Token Cache ──────────────────────────────────────────── */
-let _graphToken = null;
-let _graphTokenExpiry = 0;
+/* ── MS Graph OAuth (Delegated – Authorization Code Flow) ──────────── */
+const GRAPH_TOKENS_PATH = path.join(DATA_DIR, 'graph_tokens.json');
+const GRAPH_STATE_PATH  = path.join(DATA_DIR, 'graph_state.json');
+const GRAPH_SCOPE = 'https://graph.microsoft.com/Notes.Read.All offline_access';
+
+function loadGraphTokens() {
+  try { return JSON.parse(fs.readFileSync(GRAPH_TOKENS_PATH, 'utf-8')); } catch (_) { return null; }
+}
+function saveGraphTokens(t) {
+  fs.writeFileSync(GRAPH_TOKENS_PATH, JSON.stringify(t), 'utf-8');
+}
+function saveGraphState(s) {
+  fs.writeFileSync(GRAPH_STATE_PATH, JSON.stringify({ state: s, ts: Date.now() }), 'utf-8');
+}
+function loadGraphState() {
+  try { return JSON.parse(fs.readFileSync(GRAPH_STATE_PATH, 'utf-8')); } catch (_) { return null; }
+}
 
 async function getGraphToken() {
-  if (_graphToken && Date.now() < _graphTokenExpiry - 60000) return _graphToken;
   const opts = getOptions();
-  if (!opts.graph_tenant_id || !opts.graph_client_id || !opts.graph_client_secret) return null;
+  if (!opts.graph_tenant_id || !opts.graph_client_id) return null;
+
+  let tokens = loadGraphTokens();
+  if (!tokens) return null;
+
+  /* Access-Token noch gültig? */
+  if (tokens.access_token && tokens.expires_at && Date.now() < tokens.expires_at - 60000) {
+    return tokens.access_token;
+  }
+
+  /* Refresh */
+  if (!tokens.refresh_token) return null;
   const tokenUrl = 'https://login.microsoftonline.com/' + opts.graph_tenant_id + '/oauth2/v2.0/token';
   const body = new URLSearchParams({
-    grant_type:    'client_credentials',
+    grant_type:    'refresh_token',
     client_id:     opts.graph_client_id,
-    client_secret: opts.graph_client_secret,
-    scope:         'https://graph.microsoft.com/.default',
+    client_secret: opts.graph_client_secret || '',
+    refresh_token: tokens.refresh_token,
+    scope:         GRAPH_SCOPE,
   });
   const r = await fetch(tokenUrl, {
-    method: 'POST',
+    method:  'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
+    body:    body.toString(),
   });
   const data = await r.json().catch(() => ({}));
   if (!data.access_token) {
-    console.log('[HA Chat] Graph Token Fehler:', JSON.stringify(data));
+    console.log('[HA Chat] Graph Refresh fehlgeschlagen:', JSON.stringify(data));
     return null;
   }
-  _graphToken = data.access_token;
-  _graphTokenExpiry = Date.now() + (data.expires_in || 3600) * 1000;
-  console.log('[HA Chat] Graph Token erneuert, gültig für ' + (data.expires_in || 3600) + 's');
-  return _graphToken;
+  tokens = {
+    access_token:  data.access_token,
+    refresh_token: data.refresh_token || tokens.refresh_token,
+    expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
+  };
+  saveGraphTokens(tokens);
+  console.log('[HA Chat] Graph Access-Token per Refresh erneuert');
+  return tokens.access_token;
+}
+
+function buildAuthUrl(opts, redirectUri, state) {
+  const params = new URLSearchParams({
+    client_id:     opts.graph_client_id,
+    response_type: 'code',
+    redirect_uri:  redirectUri,
+    scope:         GRAPH_SCOPE,
+    state:         state,
+    response_mode: 'query',
+  });
+  return 'https://login.microsoftonline.com/' + opts.graph_tenant_id + '/oauth2/v2.0/authorize?' + params.toString();
+}
+
+async function exchangeCodeForTokens(opts, code, redirectUri) {
+  const tokenUrl = 'https://login.microsoftonline.com/' + opts.graph_tenant_id + '/oauth2/v2.0/token';
+  const body = new URLSearchParams({
+    grant_type:   'authorization_code',
+    client_id:    opts.graph_client_id,
+    client_secret: opts.graph_client_secret || '',
+    code,
+    redirect_uri: redirectUri,
+    scope:        GRAPH_SCOPE,
+  });
+  const r = await fetch(tokenUrl, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body:    body.toString(),
+  });
+  return r.json().catch(() => ({}));
 }
 
 function getInferenceUrl() {
@@ -313,6 +372,80 @@ const server = http.createServer(async (req, res) => {
     const actionPayload = { message: utterance };
     if (data.session_id) actionPayload.session_id = String(data.session_id);
     proxyToN8n(inferenceUrl, actionPayload, res, 'action');
+    return;
+  }
+
+  // Graph Auth-Status
+  if (pathname === '/api/graph_status' && req.method === 'GET') {
+    const opts = getOptions();
+    const tokens = loadGraphTokens();
+    const configured = !!(opts.graph_tenant_id && opts.graph_client_id);
+    const authenticated = !!(tokens && tokens.refresh_token);
+    const expiresAt = tokens && tokens.expires_at ? tokens.expires_at : null;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ configured, authenticated, expires_at: expiresAt }));
+    return;
+  }
+
+  // Graph OAuth Login starten
+  if (pathname === '/api/graph_auth' && req.method === 'GET') {
+    const opts = getOptions();
+    if (!opts.graph_tenant_id || !opts.graph_client_id) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'graph_tenant_id und graph_client_id müssen konfiguriert sein' }));
+      return;
+    }
+    /* Redirect-URI aus dem aktuellen Request ableiten */
+    const proto    = (req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
+    const host     = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+    const basePath = (req.headers['x-ingress-path'] || '').replace(/\/$/, '');
+    const redirectUri = proto + '://' + host + basePath + '/api/graph_callback';
+    const state = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    saveGraphState(state);
+    console.log('[HA Chat] graph_auth → redirect_uri=' + redirectUri);
+    const authUrl = buildAuthUrl(opts, redirectUri, state);
+    res.writeHead(302, { Location: authUrl });
+    res.end();
+    return;
+  }
+
+  // Graph OAuth Callback
+  if (pathname === '/api/graph_callback' && req.method === 'GET') {
+    const opts  = getOptions();
+    const code  = parsed.query.code  || '';
+    const state = parsed.query.state || '';
+    const storedState = loadGraphState();
+    if (!code) {
+      const errDesc = parsed.query.error_description || parsed.query.error || 'unbekannt';
+      console.log('[HA Chat] graph_callback Fehler:', errDesc);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end('<h2>Fehler: ' + errDesc + '</h2><p><a href="/">Zurück</a></p>');
+      return;
+    }
+    if (!storedState || storedState.state !== state) {
+      res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end('<h2>Ungültiger State-Parameter.</h2><p><a href="/">Zurück</a></p>');
+      return;
+    }
+    const proto       = (req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
+    const host        = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+    const basePath    = (req.headers['x-ingress-path'] || '').replace(/\/$/, '');
+    const redirectUri = proto + '://' + host + basePath + '/api/graph_callback';
+    const data = await exchangeCodeForTokens(opts, code, redirectUri);
+    if (!data.access_token) {
+      console.log('[HA Chat] graph_callback Token-Exchange Fehler:', JSON.stringify(data));
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end('<h2>Token-Exchange fehlgeschlagen: ' + (data.error_description || data.error || 'unbekannt') + '</h2><p><a href="/">Zurück</a></p>');
+      return;
+    }
+    saveGraphTokens({
+      access_token:  data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
+    });
+    console.log('[HA Chat] graph_callback: Tokens gespeichert, Login erfolgreich');
+    res.writeHead(302, { Location: basePath + '/' });
+    res.end();
     return;
   }
 
