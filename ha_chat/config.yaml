@@ -1,5 +1,5 @@
-name: "HA Chat (OneNote RAG)"
-description: "Sidebar-Chat mit RAG über OneNote, ChromaDB und Azure OpenAI. Keine Integration nötig."
+name: "Dokumentation"
+description: "Dokumentation für Home Assistant"
 version: "1.0.60"
 slug: "ha_chat"
 init: false
