@@ -38,6 +38,8 @@
 - [x] README_HACS: auf Ingress-Path-Integration + YAML angepasst
 - [x] FAB-Popup vereinfacht: keine Chat-Auswahl, kein Löschen im Popup; beim Öffnen immer neuer Chat
 - [x] README_HACS: Popup-Verhalten (immer neuer Chat, keine Auswahl/Löschen) dokumentiert
+- [x] FAB-Popup UI: Header ohne Border, Composer ohne obere Border
+- [x] FAB-Popup UX: Klick außerhalb schließt Popup (mousedown/touchstart)
 
 ## Nachfolgende Schritte
 
