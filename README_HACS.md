@@ -47,6 +47,8 @@ icon: mdi:chat
 
 Hinweis: Der Token kann sich ändern – dann Lookup wieder aktiv lassen oder Prefix aktualisieren.
 
+Wenn `ingress_api_base` gesetzt ist und Requests damit `401/403` liefern (z. B. bei Nicht-Admin), versucht die Card automatisch einmal den dynamischen Lookup pro eingeloggtem User und nutzt dann den neuen Prefix.
+
 ### Texte (Header, FAB, Willkommen)
 
 - `title` – Name im **Popup-Header** und als **Tooltip** / `aria-label` am FAB (Standard: `HA Chat`).

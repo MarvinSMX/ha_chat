@@ -310,6 +310,7 @@
       this._open = false;
       this._instanceId = 'fab-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
       this._apiPathPrefix = null;
+      this._usingManualBase = false;
       this._resolvePromise = null;
       this._sessionId = 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
       this._chatId = null;
@@ -462,6 +463,7 @@
       const manual = this._manualIngressBase();
       if (manual) {
         this._apiPathPrefix = manual;
+        this._usingManualBase = true;
         return Promise.resolve(manual);
       }
       if (this._apiPathPrefix) return Promise.resolve(this._apiPathPrefix);
@@ -470,12 +472,30 @@
       this._resolvePromise = this._fetchIngressPath()
         .then((prefix) => {
           self._apiPathPrefix = prefix;
+          self._usingManualBase = false;
           return prefix;
         })
         .finally(() => {
           self._resolvePromise = null;
         });
       return this._resolvePromise;
+    }
+
+    _fetchApi(path, init, canRetry) {
+      const self = this;
+      const mayRetry = canRetry !== false;
+      return this._ensureApiBase()
+        .then(() => fetch(this._apiUrl(path), { ...fetchOpts, ...(init || {}) }))
+        .then((res) => {
+          // If manual ingress path is stale/user-mismatched, re-resolve once per user.
+          if (mayRetry && (res.status === 401 || res.status === 403)) {
+            self._apiPathPrefix = null;
+            self._usingManualBase = false;
+            return self._ensureApiBase()
+              .then(() => fetch(self._apiUrl(path), { ...fetchOpts, ...(init || {}) }));
+          }
+          return res;
+        });
     }
 
     _showStatus(msg, isError) {
@@ -679,11 +699,10 @@
 
     _createNewChat(focusInput) {
       const self = this;
-      return fetch(this._apiUrl('/api/chats'), {
+      return this._fetchApi('/api/chats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
-        ...fetchOpts,
       })
         .then((r) => parseJsonResponse(r))
         .then((d) => {
@@ -795,12 +814,11 @@
       const self = this;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 120000);
-      fetch(this._apiUrl('/api/chat'), {
+      this._fetchApi('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, session_id: self._sessionId, chat_id: self._chatId }),
         signal: controller.signal,
-        ...fetchOpts,
       })
         .then((r) => { clearTimeout(timer); return parseJsonResponse(r); })
         .then((d) => {
@@ -843,11 +861,10 @@
       const sendBtn = this._popupEl && this._popupEl.querySelector('#fab-send');
       if (sendBtn) sendBtn.disabled = true;
       const self = this;
-      fetch(this._apiUrl('/api/execute_action'), {
+      this._fetchApi('/api/execute_action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ utterance: utterance, session_id: self._sessionId, chat_id: self._chatId }),
-        ...fetchOpts,
       })
         .then((r) => parseJsonResponse(r))
         .then((d) => {
