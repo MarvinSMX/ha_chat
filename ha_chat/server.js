@@ -331,8 +331,21 @@ const server = http.createServer(async (req, res) => {
   // Aktueller HA User (Ingress Header)
   if (pathname === '/api/me' && req.method === 'GET') {
     const userId = getHaUserId(req);
+    const debug = parsed.query && String(parsed.query.debug || '').trim() === '1';
+    const h = (req && req.headers) || {};
+    const ingressHeaders = debug ? {
+      'x-hass-user-id': h['x-hass-user-id'],
+      'x-homeassistant-user-id': h['x-homeassistant-user-id'],
+      'x-ha-user-id': h['x-ha-user-id'],
+      'x-hass-user': h['x-hass-user'],
+      'x-hass-is-admin': h['x-hass-is-admin'],
+      'x-ingress-path': h['x-ingress-path'],
+      'x-forwarded-for': h['x-forwarded-for'],
+      'x-forwarded-proto': h['x-forwarded-proto'],
+      host: h['host'],
+    } : undefined;
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ user_id: userId }));
+    res.end(JSON.stringify(debug ? { user_id: userId, headers: ingressHeaders } : { user_id: userId }));
     return;
   }
 
