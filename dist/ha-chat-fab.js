@@ -12,6 +12,7 @@
   const CARD_TYPE = 'ha-chat-fab';
   const OVERLAY_CLASS = 'ha-chat-fab-overlay';
   const STYLE_ID = 'ha-chat-fab-styles';
+  const POPUP_CLASS = 'ha-chat-fab-popup';
 
   function ensureStyles(root) {
     const r = root || document.head || document.documentElement;
@@ -40,6 +41,63 @@
       .${OVERLAY_CLASS} button:hover{filter:brightness(0.95)}
       .${OVERLAY_CLASS} ha-icon{color:inherit}
       .${OVERLAY_CLASS} svg{width:22px;height:22px;display:block}
+
+      .${POPUP_CLASS}{
+        position:fixed;
+        right:calc(var(--ha-space-4, 16px) + var(--safe-area-inset-right, 0px));
+        bottom:calc(56px + var(--ha-space-4, 16px) + var(--safe-area-inset-bottom, 0px) + 10px);
+        width:min(380px, calc(100vw - 24px));
+        height:min(540px, calc(100vh - 120px));
+        background:var(--card-background-color, rgba(25,25,25,0.98));
+        color:var(--primary-text-color, #e1e1e1);
+        border:1px solid var(--divider-color, rgba(255,255,255,0.12));
+        border-radius:var(--ha-border-radius-lg, 12px);
+        box-shadow:var(--ha-box-shadow-l, 0 10px 30px rgba(0,0,0,.45));
+        overflow:hidden;
+        display:none;
+        flex-direction:column;
+        z-index:100000;
+      }
+      .${POPUP_CLASS}[data-open="true"]{display:flex;}
+      .${POPUP_CLASS} .head{
+        height:56px;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        padding:0 10px 0 12px;
+        border-bottom:1px solid var(--divider-color, rgba(255,255,255,0.12));
+        background:var(--sidebar-menu-button-background-color, rgba(0,0,0,0.08));
+      }
+      .${POPUP_CLASS} .title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      .${POPUP_CLASS} .head .btn{
+        width:40px;height:40px;border:none;border-radius:9999px;background:transparent;
+        color:var(--secondary-text-color, #9b9b9b);cursor:pointer;display:flex;align-items:center;justify-content:center;
+      }
+      .${POPUP_CLASS} .head .btn:hover{background:rgba(255,255,255,0.08);color:var(--primary-text-color,#fff);}
+      .${POPUP_CLASS} .body{flex:1;min-height:0;display:flex;flex-direction:column;}
+      .${POPUP_CLASS} .thread{flex:1;min-height:0;overflow:auto;padding:12px;}
+      .${POPUP_CLASS} .msg{max-width:92%;padding:10px 12px;border-radius:16px;margin:6px 0;line-height:1.45;white-space:pre-wrap;word-break:break-word;font-size:0.95rem;}
+      .${POPUP_CLASS} .msg.user{margin-left:auto;background:var(--ha-color-fill-primary-loud-resting, #009ac7);color:var(--ha-color-on-primary-loud,#fff);border-bottom-right-radius:4px;}
+      .${POPUP_CLASS} .msg.assistant{margin-right:auto;background:rgba(255,255,255,0.06);border:1px solid var(--divider-color, rgba(255,255,255,0.12));border-bottom-left-radius:4px;}
+      .${POPUP_CLASS} .composer{padding:10px;border-top:1px solid var(--divider-color, rgba(255,255,255,0.12));}
+      .${POPUP_CLASS} .row{display:flex;gap:8px;align-items:center;}
+      .${POPUP_CLASS} input{
+        flex:1;min-width:0;
+        padding:10px 12px;border-radius:9999px;
+        border:1px solid var(--divider-color, rgba(255,255,255,0.12));
+        background:rgba(0,0,0,0.18);
+        color:var(--primary-text-color,#e1e1e1);
+        outline:none;
+      }
+      .${POPUP_CLASS} input:focus{border-color:var(--primary-color,#009ac7);box-shadow:0 0 0 1px var(--primary-color,#009ac7);}
+      .${POPUP_CLASS} .send{
+        width:40px;height:40px;border-radius:9999px;border:none;cursor:pointer;
+        background:var(--ha-color-fill-primary-loud-resting, #009ac7);
+        color:var(--ha-color-on-primary-loud,#fff);
+        display:flex;align-items:center;justify-content:center;
+      }
+      .${POPUP_CLASS} .send:disabled{opacity:0.5;cursor:not-allowed;}
+      .${POPUP_CLASS} .err{padding:8px 12px;color:#ff8a80;font-size:0.85rem;display:none;}
     `;
     r.appendChild(style);
   }
@@ -82,13 +140,19 @@
     return wrap;
   }
 
-  function navigate(href) {
-    try {
-      window.history.pushState(null, '', href);
-      window.dispatchEvent(new Event('location-changed'));
-    } catch (_) {
-      window.location.href = href;
-    }
+  function joinUrl(base, path) {
+    const b = (base || '').replace(/\/$/, '');
+    const p = (path || '').startsWith('/') ? path : '/' + path;
+    return b + p;
+  }
+
+  async function fetchJson(url, opts) {
+    const r = await fetch(url, Object.assign({ credentials: 'include' }, opts || {}));
+    const t = await r.text();
+    let data = null;
+    try { data = JSON.parse(t || '{}'); } catch (_) { throw new Error('Kein JSON: ' + (t || '').slice(0, 60)); }
+    if (!r.ok) throw new Error((data && (data.error || data.message)) || ('HTTP ' + r.status));
+    return data;
   }
 
   class HaChatFabCard extends HTMLElement {
@@ -97,6 +161,11 @@
       this.attachShadow({ mode: 'open' });
       this._config = {};
       this._overlayEl = null;
+      this._popupEl = null;
+      this._open = false;
+      this._chatId = null;
+      this._thread = [];
+      this._busy = false;
       this._instanceId = 'fab-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
       this.shadowRoot.innerHTML = `<style>:host{display:none}</style>`;
     }
@@ -123,6 +192,7 @@
 
     disconnectedCallback() {
       this._unmountOverlay();
+      this._unmountPopup();
     }
 
     _mountOverlay() {
@@ -143,16 +213,157 @@
         : 'mdi:chat';
       btn.appendChild(createIconEl(iconName));
 
-      btn.addEventListener('click', () => {
-        const href = (this._config && typeof this._config.href === 'string' && this._config.href.trim())
-          ? this._config.href.trim()
-          : '/hassio/ingress/ha_chat';
-        navigate(href);
-      });
+      btn.addEventListener('click', () => this._togglePopup());
 
       host.appendChild(btn);
       root.appendChild(host);
       this._overlayEl = host;
+    }
+
+    _mountPopup() {
+      if (this._popupEl) return;
+      const root = getOverlayRoot();
+      const pop = document.createElement('div');
+      pop.className = POPUP_CLASS;
+      pop.setAttribute('data-instance', this._instanceId);
+      pop.setAttribute('data-open', 'false');
+
+      pop.innerHTML = `
+        <div class="head">
+          <div class="title">HA Chat</div>
+          <button class="btn" type="button" aria-label="Schließen" title="Schließen">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"></path></svg>
+          </button>
+        </div>
+        <div class="body">
+          <div class="thread"></div>
+          <div class="err"></div>
+          <div class="composer">
+            <div class="row">
+              <input type="text" placeholder="Nachricht…" />
+              <button class="send" type="button" aria-label="Senden" title="Senden">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M2,21L23,12L2,3V10L17,12L2,14V21Z"></path></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      pop.querySelector('.btn').addEventListener('click', () => this._setOpen(false));
+      const input = pop.querySelector('input');
+      const send = pop.querySelector('.send');
+      send.addEventListener('click', () => this._sendFromPopup());
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._sendFromPopup(); });
+
+      root.appendChild(pop);
+      this._popupEl = pop;
+    }
+
+    _unmountPopup() {
+      if (this._popupEl && this._popupEl.parentNode) this._popupEl.parentNode.removeChild(this._popupEl);
+      this._popupEl = null;
+    }
+
+    _togglePopup() { this._setOpen(!this._open); }
+
+    _setOpen(open) {
+      this._open = !!open;
+      this._mountPopup();
+      if (!this._popupEl) return;
+      this._popupEl.setAttribute('data-open', this._open ? 'true' : 'false');
+      if (this._open) {
+        const inp = this._popupEl.querySelector('input');
+        if (inp) setTimeout(() => inp.focus(), 0);
+        if (!this._chatId) this._ensureChatLoaded();
+      }
+    }
+
+    _apiBase() {
+      const href = (this._config && typeof this._config.href === 'string' && this._config.href.trim())
+        ? this._config.href.trim().replace(/\/$/, '')
+        : '/hassio/ingress/ha_chat';
+      return href;
+    }
+
+    async _ensureChatLoaded() {
+      try {
+        const api = this._apiBase();
+        const list = await fetchJson(joinUrl(api, '/api/chats'));
+        const chats = (list && Array.isArray(list.chats)) ? list.chats : [];
+        if (chats.length) {
+          await this._loadChat(chats[0].id);
+        } else {
+          const created = await fetchJson(joinUrl(api, '/api/chats'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          const chat = created && created.chat ? created.chat : null;
+          if (chat && chat.id) await this._loadChat(chat.id);
+        }
+      } catch (e) {
+        this._showErr(e.message || String(e));
+      }
+    }
+
+    async _loadChat(chatId) {
+      const api = this._apiBase();
+      const d = await fetchJson(joinUrl(api, '/api/chats/' + encodeURIComponent(chatId)));
+      const chat = d && d.chat ? d.chat : {};
+      this._chatId = chat.id || chatId;
+      this._thread = Array.isArray(chat.messages) ? chat.messages : [];
+      this._renderThread();
+    }
+
+    _showErr(msg) {
+      if (!this._popupEl) return;
+      const el = this._popupEl.querySelector('.err');
+      if (!el) return;
+      el.textContent = msg || '';
+      el.style.display = msg ? 'block' : 'none';
+    }
+
+    _renderThread() {
+      if (!this._popupEl) return;
+      const t = this._popupEl.querySelector('.thread');
+      if (!t) return;
+      t.innerHTML = '';
+      (this._thread || []).forEach((m) => {
+        const div = document.createElement('div');
+        div.className = 'msg ' + (m.role === 'user' ? 'user' : 'assistant');
+        div.textContent = (m && m.content != null) ? String(m.content) : '';
+        t.appendChild(div);
+      });
+      t.scrollTop = t.scrollHeight;
+    }
+
+    async _sendFromPopup() {
+      if (!this._popupEl || this._busy) return;
+      const input = this._popupEl.querySelector('input');
+      const send = this._popupEl.querySelector('.send');
+      const text = input ? String(input.value || '').trim() : '';
+      if (!text) return;
+      this._showErr('');
+      if (input) input.value = '';
+      this._busy = true;
+      if (send) send.disabled = true;
+      try {
+        const api = this._apiBase();
+        if (!this._chatId) await this._ensureChatLoaded();
+        this._thread = this._thread || [];
+        this._thread.push({ role: 'user', content: text });
+        this._renderThread();
+
+        const d = await fetchJson(joinUrl(api, '/api/chat'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, chat_id: this._chatId })
+        });
+        const answer = d && (d.answer != null ? d.answer : '');
+        this._thread.push({ role: 'assistant', content: String(answer || '') });
+        this._renderThread();
+      } catch (e) {
+        this._showErr(e.message || String(e));
+      } finally {
+        this._busy = false;
+        if (send) send.disabled = false;
+      }
     }
 
     _unmountOverlay() {

@@ -19,7 +19,8 @@ href: /hassio/ingress/ha_chat
 icon: mdi:chat
 ```
 
-Die Card selbst ist unsichtbar, sie aktiviert nur den FAB für genau diesen View.
+Die Card selbst ist unsichtbar, sie aktiviert nur den FAB für genau diesen View.  
+Beim Klick öffnet sich ein **Popup unten rechts** (kein Seitenwechsel), das über Ingress die API deines Add-ons nutzt.
 
 ### Konfiguration (optional)
 
