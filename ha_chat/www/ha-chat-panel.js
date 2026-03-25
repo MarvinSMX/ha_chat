@@ -19,7 +19,8 @@
 
       *, *::before, *::after { box-sizing: border-box; }
       :host { display: block; height: 100%; }
-      .container { height: 100%; display: flex; flex-direction: column; align-items: center; padding: 16px; background: #1c1c1c; color: #e0e0e0; font-family: inherit; }
+      .container { height: 100%; display: flex; flex-direction: row; padding: 16px; background: #1c1c1c; color: #e0e0e0; font-family: inherit; gap: 14px; }
+      .main { min-width: 0; flex: 1; display: flex; flex-direction: column; }
       .top-bar { width: 100%; display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-bottom: 10px; min-height: 32px; flex-shrink: 0; }
       .chat-inner { width: 100%; flex: 1; display: flex; flex-direction: column; min-height: 0; }
 
@@ -33,6 +34,9 @@
 
       /* ── Nachrichten-Spalte: gleiche Breite wie Input ── */
       .msg-col { width: min(100%, 620px); margin: 0 auto; display: flex; flex-direction: column; align-items: flex-start; padding: 4px 0 8px; }
+      .empty-state { width: min(100%, 620px); min-height: 100%; margin: 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: #8f8f8f; }
+      .empty-state img { width: 140px; height: 140px; opacity: 0.62; filter: grayscale(1) brightness(0.33) contrast(0.9); }
+      .empty-state-text { font-size: 0.92rem; }
       .msg { margin: 6px 0; padding: 11px 15px; border-radius: 18px; max-width: 92%; width: fit-content; line-height: 1.55; font-size: 0.97rem; }
       .msg.user { background: #009AC7; color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
       .msg.assistant { background: #2d2d2d; border: 1px solid #3a3a3a; border-bottom-left-radius: 4px; }
@@ -114,33 +118,52 @@
       .sync-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
       @keyframes sync-spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
       .sync-btn.syncing svg { animation: sync-spin .8s linear infinite; }
+
+      .sidebar { width: 270px; max-width: 40vw; border: 1px solid #343434; border-radius: 14px; background: #171717; display: flex; flex-direction: column; min-height: 0; }
+      .sidebar-head { padding: 12px; border-bottom: 1px solid #2e2e2e; }
+      .new-chat-btn { width: 100%; border: 1px solid #009AC7; border-radius: 10px; background: rgba(0, 154, 199, 0.12); color: #77ddff; padding: 9px 10px; cursor: pointer; font-family: inherit; font-size: 0.9rem; }
+      .new-chat-btn:hover { background: rgba(0, 154, 199, 0.18); }
+      .chat-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+      .chat-item { width: 100%; text-align: left; border: 1px solid #2f2f2f; border-radius: 10px; background: #1f1f1f; color: #c9c9c9; padding: 9px 10px; cursor: pointer; font-family: inherit; }
+      .chat-item:hover { border-color: #444; background: #252525; }
+      .chat-item.active { border-color: #009AC7; background: rgba(0, 154, 199, 0.14); color: #e8f7ff; }
+      .chat-item-title { font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .chat-item-meta { margin-top: 3px; font-size: 0.75rem; color: #888; }
     </style>
     <div class="img-lightbox" id="img-lightbox" style="display:none"><img id="img-lightbox-img" src="" alt=""></div>
     <div class="container">
-      <div class="top-bar">
-        <div id="graph-status" style="display:none" class="graph-status"></div>
-        <button id="sync-btn" class="sync-btn" style="display:none" title="Doku-Sync starten">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
-          </svg>
-          Sync
-        </button>
-      </div>
-      <div class="chat-inner">
-        <div class="thread" id="thread"><div class="msg-col" id="msg-col"></div></div>
-        <div class="input-area">
-          <div class="prompt-suggestions" id="prompt-suggestions"></div>
-          <div class="input-wrapper">
-            <input type="text" id="input" placeholder="Nachricht eingeben …" autocomplete="off" />
-            <button type="button" class="send-btn" id="send" title="Senden" aria-label="Senden">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 19V5M5 12l7-7 7 7"/>
-              </svg>
-            </button>
+      <div class="main">
+        <div class="top-bar">
+          <div id="graph-status" style="display:none" class="graph-status"></div>
+          <button id="sync-btn" class="sync-btn" style="display:none" title="Doku-Sync starten">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
+            </svg>
+            Sync
+          </button>
+        </div>
+        <div class="chat-inner">
+          <div class="thread" id="thread"><div class="msg-col" id="msg-col"></div></div>
+          <div class="input-area">
+            <div class="prompt-suggestions" id="prompt-suggestions"></div>
+            <div class="input-wrapper">
+              <input type="text" id="input" placeholder="Nachricht eingeben …" autocomplete="off" />
+              <button type="button" class="send-btn" id="send" title="Senden" aria-label="Senden">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 19V5M5 12l7-7 7 7"/>
+                </svg>
+              </button>
+            </div>
+            <div id="error" class="error" style="display:none;"></div>
           </div>
-          <div id="error" class="error" style="display:none;"></div>
         </div>
       </div>
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <button id="new-chat-btn" type="button" class="new-chat-btn">+ Neuer Chat</button>
+        </div>
+        <div id="chat-list" class="chat-list"></div>
+      </aside>
     </div>
   `;
 
@@ -267,6 +290,8 @@
       this.shadowRoot.appendChild(template.content.cloneNode(true));
       this._thread = [];
       this._sessionId = 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+      this._chatId = null;
+      this._chats = [];
     }
 
     connectedCallback() {
@@ -275,6 +300,7 @@
       var input   = this.shadowRoot.getElementById('input');
       var sendBtn = this.shadowRoot.getElementById('send');
       var threadEl = this.shadowRoot.getElementById('thread');
+      var newChatBtn = this.shadowRoot.getElementById('new-chat-btn');
 
       /* Prompt-Vorschläge + Sync-Button: aus /config.json laden */
       this._renderSuggestions(PROMPT_SUGGESTIONS, input);
@@ -300,6 +326,7 @@
       /* Senden */
       sendBtn.addEventListener('click',  function () { self._send(); });
       input.addEventListener('keydown',  function (e) { if (e.key === 'Enter') self._send(); });
+      if (newChatBtn) newChatBtn.addEventListener('click', function () { self._createNewChat(true); });
 
       /* Skeleton ausblenden sobald Bild geladen */
       threadEl.addEventListener('load', function (e) {
@@ -334,6 +361,93 @@
         lightbox.style.display = 'none';
         lightboxImg.src = '';
       });
+
+      this._loadChats();
+    }
+
+    _shortDate(ts) {
+      if (!ts) return '';
+      try {
+        return new Date(ts).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+      } catch (_) {
+        return '';
+      }
+    }
+
+    _renderChatList() {
+      var listEl = this.shadowRoot.getElementById('chat-list');
+      if (!listEl) return;
+      listEl.innerHTML = '';
+      var self = this;
+      this._chats.forEach(function (chat) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'chat-item' + (chat.id === self._chatId ? ' active' : '');
+        btn.innerHTML = '<div class="chat-item-title">' + escapeHtml(chat.title || 'Neuer Chat') + '</div>'
+          + '<div class="chat-item-meta">' + (chat.message_count || 0) + ' Nachrichten · ' + self._shortDate(chat.updated_at) + '</div>';
+        btn.addEventListener('click', function () { self._selectChat(chat.id); });
+        listEl.appendChild(btn);
+      });
+    }
+
+    _loadChats() {
+      var self = this;
+      fetch(apiBase() + '/api/chats')
+        .then(function (r) { return parseJsonResponse(r); })
+        .then(function (d) {
+          self._chats = Array.isArray(d.chats) ? d.chats : [];
+          self._renderChatList();
+          if (!self._chatId) {
+            if (self._chats.length) self._selectChat(self._chats[0].id);
+            else self._createNewChat(false);
+          }
+        })
+        .catch(function () {
+          self._createNewChat(false);
+        });
+    }
+
+    _createNewChat(focusInput) {
+      var self = this;
+      fetch(apiBase() + '/api/chats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+        .then(function (r) { return parseJsonResponse(r); })
+        .then(function (d) {
+          if (!d.chat || !d.chat.id) return;
+          self._chatId = d.chat.id;
+          self._thread = [];
+          self._loadChats();
+          self._render();
+          if (focusInput) {
+            var input = self.shadowRoot.getElementById('input');
+            if (input) input.focus();
+          }
+        })
+        .catch(function () {});
+    }
+
+    _selectChat(chatId) {
+      var self = this;
+      if (!chatId) return;
+      fetch(apiBase() + '/api/chats/' + encodeURIComponent(chatId))
+        .then(function (r) { return parseJsonResponse(r); })
+        .then(function (d) {
+          var chat = d.chat || {};
+          self._chatId = chat.id || chatId;
+          self._thread = Array.isArray(chat.messages) ? chat.messages.map(function (m) {
+            return {
+              role: m.role,
+              content: m.content || '',
+              sources: Array.isArray(m.sources) ? m.sources : [],
+              actions: Array.isArray(m.actions) ? m.actions : [],
+              pending: false,
+            };
+          }) : [];
+          self._renderChatList();
+          self._render();
+        })
+        .catch(function (e) {
+          self._showError('Chat konnte nicht geladen werden: ' + (e.message || e));
+        });
     }
 
     _renderSuggestions(list, inputEl) {
@@ -453,6 +567,13 @@
 
       /* Suggestions nur bei leerer Unterhaltung */
       if (suggestEl) suggestEl.style.display = this._thread.length === 0 ? '' : 'none';
+
+      if (this._thread.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'empty-state';
+        empty.innerHTML = '<img src="' + escapeAttr(apiBase() + '/logo.svg') + '" alt="HA Chat Logo"><div class="empty-state-text">Starte einen neuen Chat.</div>';
+        msgCol.appendChild(empty);
+      }
 
       this._thread.forEach(function (m) {
         var div = document.createElement('div');
@@ -605,7 +726,7 @@
       fetch(apiBase() + '/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, session_id: self._sessionId }),
+        body: JSON.stringify({ message: text, session_id: self._sessionId, chat_id: self._chatId }),
         signal: controller.signal
       })
         .then(function (r) { clearTimeout(timer); return parseJsonResponse(r); })
@@ -615,6 +736,8 @@
             self._setLastAssistantMessage('Fehler: ' + d.error);
           } else {
             self._setLastAssistantMessage(d.answer || '', d.sources || [], d.actions || []);
+            if (d.chat_id && d.chat_id !== self._chatId) self._chatId = d.chat_id;
+            self._loadChats();
           }
         })
         .catch(function (e) {
@@ -640,7 +763,7 @@
       fetch(apiBase() + '/api/execute_action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ utterance: utterance, session_id: self._sessionId })
+        body: JSON.stringify({ utterance: utterance, session_id: self._sessionId, chat_id: self._chatId })
       })
         .then(function (r) { return parseJsonResponse(r); })
         .then(function (d) {
@@ -650,6 +773,8 @@
           } else {
             var ans = d.answer != null ? d.answer : (d.response != null ? d.response : '');
             self._setLastAssistantMessage(ans, d.sources || [], d.actions || []);
+            if (d.chat_id && d.chat_id !== self._chatId) self._chatId = d.chat_id;
+            self._loadChats();
           }
         })
         .catch(function (e) {
