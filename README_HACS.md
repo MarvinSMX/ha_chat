@@ -83,7 +83,7 @@ icon: mdi:chat
 - `title` – Name im **Popup-Header** und als **Tooltip** / `aria-label` am FAB (Standard: `HA Chat`).
 - `welcome_title` – Überschrift im **Empty-State** (optional). Wenn nicht gesetzt: `Willkommen im <title>`.
 - `welcome_subtitle` – Zeile darunter (optional). Wenn nicht gesetzt: der bisherige Hinweis zu Vorschlägen.
-- **Willkommensbild:** Über den Text wird `hand.png` geladen (Waving-Hand), **im selben Verzeichnis wie** `ha-chat-fab.js` im HACS-Repo (Root). Optional: `welcome_image_url: /local/mein-bild.png` o. Ä., um ein anderes Bild zu nutzen.
+- **Willkommensbild:** Über den Text erscheint ein **eingebettetes** Waving-Hand (PNG in der JS-Datei – kein separater Request, kein 404 unter `/hacsfiles/…`). Optional: `welcome_image_url: /local/mein-bild.png` o. Ä.
 
 ```yaml
 type: custom:ha-chat-fab
@@ -98,7 +98,7 @@ icon: mdi:chat
 
 - `slug` – Alias für `addon_slug` (Abwärtskompatibilität)
 - `addon_direct_url` / `direct_url` / `addon_port_url` – direkte Basis-URL zum Add-on (Ingress umgehen)
-- `welcome_image_url` – alternatives Bild für den Empty-State (sonst `hand.png` neben der JS-Resource)
+- `welcome_image_url` – alternatives Bild für den Empty-State (sonst eingebettetes Standardbild)
 - `zIndex` – z. B. `100000`
 
 ### Hinweis zu `/hassio/ingress/...`
