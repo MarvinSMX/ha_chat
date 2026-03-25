@@ -10,7 +10,8 @@ Die Card nutzt stattdessen den Pfad **`/api/hassio_ingress/<token>/api/...`**, d
 
 `GET /api/hassio_addon_ingress_path/<addon_slug>`
 
-(mit deiner **eingeloggten HA-Session** – gleiche Origin, Cookies; kein Long-Lived Token in der Card nötig).
+(mit deiner **eingeloggten HA-Session** – gleiche Origin, Cookies; kein Long-Lived Token in der Card nötig).  
+Zusätzlich nutzt die Card, wenn verfügbar, automatisch den **aktuellen HA Access-Token des eingeloggten Users** als `Authorization: Bearer ...` für diesen Lookup.
 
 ### Installation (HACS)
 

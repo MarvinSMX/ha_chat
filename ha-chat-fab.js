@@ -303,7 +303,9 @@
       super();
       this.attachShadow({ mode: 'open' });
       this._config = {};
+      this._hass = null;
       this._overlayEl = null;
+      this._backdropEl = null;
       this._popupEl = null;
       this._open = false;
       this._instanceId = 'fab-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
@@ -326,6 +328,22 @@
 
     getCardSize() {
       return 0;
+    }
+
+    set hass(hass) {
+      this._hass = hass || null;
+    }
+
+    _haAccessToken() {
+      try {
+        const h = this._hass;
+        if (!h) return '';
+        const t1 = h.auth && h.auth.data && h.auth.data.access_token;
+        if (typeof t1 === 'string' && t1.trim()) return t1.trim();
+        const t2 = h.connection && h.connection.options && h.connection.options.auth && h.connection.options.auth.accessToken;
+        if (typeof t2 === 'string' && t2.trim()) return t2.trim();
+      } catch (_) {}
+      return '';
     }
 
     _fabTitle() {
@@ -418,7 +436,9 @@
     _fetchIngressPath() {
       const slug = this._addonSlug();
       const url = '/api/hassio_addon_ingress_path/' + encodeURIComponent(slug);
-      return fetch(url, fetchOpts).then((r) => {
+      const token = this._haAccessToken();
+      const headers = token ? { Authorization: 'Bearer ' + token } : undefined;
+      return fetch(url, { ...fetchOpts, headers }).then((r) => {
         if (!r.ok) {
           return r.text().then((t) => {
             throw new Error('Ingress-Pfad (HTTP ' + r.status + '): Integration aktiv? ' + (t && t.length < 80 ? t : ''));

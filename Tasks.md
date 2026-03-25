@@ -43,6 +43,7 @@
 - [x] FAB-Popup: Outside-Close über Vollflächen-Backdrop unter dem Popup (ersetzt document-Listener; zuverlässig bei HA Shadow-DOM)
 - [x] FAB: `title`, `welcome_title`, `welcome_subtitle` per Lovelace-YAML; README_HACS ergänzt
 - [x] FAB-Popup Empty-State: Willkommens-Screen + Suggestion-Chips wie in der App (bei leerem Chat)
+- [x] FAB: Ingress-Lookup nutzt automatisch User-Access-Token (`Authorization: Bearer`) aus HA-Card-Context, falls verfügbar
 
 ## Nachfolgende Schritte
 
