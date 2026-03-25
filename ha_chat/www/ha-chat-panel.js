@@ -119,7 +119,7 @@
       .sync-btn.syncing svg { animation: sync-spin .8s linear infinite; }
 
       .sidebar { width: var(--ha-chat-sidebar-width, 256px); max-width: 45vw; background: var(--sidebar-background-color, #141414); color: var(--sidebar-text-color, var(--primary-text-color, #e1e1e1)); display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--divider-color, rgba(255,255,255,0.12)); }
-      .sidebar-head { padding: 10px; border-bottom: 1px solid var(--divider-color, rgba(255,255,255,0.12)); display: flex; align-items: center; gap: 8px; }
+      .sidebar-head { min-height: 56px; padding: 8px; border-bottom: 1px solid var(--divider-color, rgba(255,255,255,0.12)); display: flex; align-items: center; gap: 8px; box-sizing: border-box; }
       .sidebar-head-left { min-width: 0; flex: 1; display: flex; align-items: center; gap: 8px; }
       .sidebar-head-right { display: flex; align-items: center; gap: 6px; }
       .sidebar-toggle { width: 40px; height: 40px; border: none; background: transparent; color: var(--sidebar-icon-color, var(--secondary-text-color, #9b9b9b)); border-radius: 9999px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
