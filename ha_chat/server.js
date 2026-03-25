@@ -707,6 +707,7 @@ const server = http.createServer(async (req, res) => {
       '.json': 'application/json',
       '.css': 'text/css',
       '.ico': 'image/x-icon',
+      '.svg': 'image/svg+xml',
     };
     res.setHeader('Content-Type', types[ext] || 'application/octet-stream');
     res.writeHead(200);

@@ -19,10 +19,10 @@
 
       *, *::before, *::after { box-sizing: border-box; }
       :host { display: block; height: 100%; }
-      .container { height: 100%; display: flex; flex-direction: row; padding: 16px; background: #1c1c1c; color: #e0e0e0; font-family: inherit; gap: 14px; }
+      .container { height: 100%; display: flex; flex-direction: row; padding: 0; background: var(--primary-background-color, #1c1c1c); color: var(--primary-text-color, #e0e0e0); font-family: inherit; gap: 0; }
       .main { min-width: 0; flex: 1; display: flex; flex-direction: column; }
-      .top-bar { width: 100%; display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-bottom: 10px; min-height: 32px; flex-shrink: 0; }
-      .chat-inner { width: 100%; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+      .top-bar { width: 100%; display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 16px 16px 10px; min-height: 32px; flex-shrink: 0; }
+      .chat-inner { width: 100%; flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 0 16px 16px; }
 
       /* ── Thread: volle Breite, Scrollbar am Rand ── */
       .thread { flex: 1; width: 100%; overflow-y: auto; margin-bottom: 12px; min-height: 0; }
@@ -119,14 +119,22 @@
       @keyframes sync-spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
       .sync-btn.syncing svg { animation: sync-spin .8s linear infinite; }
 
-      .sidebar { width: 270px; max-width: 40vw; border: 1px solid #343434; border-radius: 14px; background: #171717; display: flex; flex-direction: column; min-height: 0; }
-      .sidebar-head { padding: 12px; border-bottom: 1px solid #2e2e2e; }
-      .new-chat-btn { width: 100%; border: 1px solid #009AC7; border-radius: 10px; background: rgba(0, 154, 199, 0.12); color: #77ddff; padding: 9px 10px; cursor: pointer; font-family: inherit; font-size: 0.9rem; }
-      .new-chat-btn:hover { background: rgba(0, 154, 199, 0.18); }
-      .chat-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-      .chat-item { width: 100%; text-align: left; border: 1px solid #2f2f2f; border-radius: 10px; background: #1f1f1f; color: #c9c9c9; padding: 9px 10px; cursor: pointer; font-family: inherit; }
-      .chat-item:hover { border-color: #444; background: #252525; }
-      .chat-item.active { border-color: #009AC7; background: rgba(0, 154, 199, 0.14); color: #e8f7ff; }
+      .sidebar { width: var(--ha-chat-sidebar-width, 256px); max-width: 45vw; background: var(--sidebar-background-color, #141414); color: var(--sidebar-text-color, var(--primary-text-color, #e1e1e1)); display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--divider-color, rgba(255,255,255,0.12)); }
+      .sidebar[aria-expanded="false"] { width: var(--ha-chat-sidebar-collapsed-width, 56px); }
+      .sidebar-head { padding: 10px; border-bottom: 1px solid var(--divider-color, rgba(255,255,255,0.12)); display: flex; align-items: center; gap: 8px; }
+      .sidebar-toggle { width: 40px; height: 40px; border: none; background: transparent; color: var(--sidebar-icon-color, var(--secondary-text-color, #9b9b9b)); border-radius: 9999px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+      .sidebar-toggle:hover { background: rgba(255,255,255,0.06); }
+      .sidebar-toggle svg { width: 22px; height: 22px; }
+      .new-chat-btn { flex: 1; border: 1px solid var(--ha-color-border-primary-normal, var(--primary-color, #009ac7)); border-radius: var(--ha-border-radius-md, 8px); background: var(--ha-color-fill-primary-quiet-resting, rgba(0, 154, 199, 0.10)); color: var(--ha-color-text-link, #7bd4fb); padding: 9px 10px; cursor: pointer; font-family: inherit; font-size: 0.9rem; }
+      .new-chat-btn:hover { background: var(--ha-color-fill-primary-quiet-hover, rgba(0, 154, 199, 0.16)); }
+      .sidebar[aria-expanded="false"] .new-chat-btn { display: none; }
+      .chat-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+      .sidebar[aria-expanded="false"] .chat-list { padding: 6px; }
+      .chat-item { width: 100%; text-align: left; border: none; border-radius: var(--ha-border-radius-md, 8px); background: transparent; color: var(--sidebar-text-color, var(--primary-text-color, #e1e1e1)); padding: 10px 10px; cursor: pointer; font-family: inherit; position: relative; }
+      .chat-item:hover { background: rgba(255,255,255,0.06); }
+      .chat-item.active { background: rgba(var(--rgb-primary-color, 0,154,199), 0.18); }
+      .sidebar[aria-expanded="false"] .chat-item-title,
+      .sidebar[aria-expanded="false"] .chat-item-meta { display: none; }
       .chat-item-title { font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .chat-item-meta { margin-top: 3px; font-size: 0.75rem; color: #888; }
     </style>
@@ -160,6 +168,11 @@
       </div>
       <aside class="sidebar">
         <div class="sidebar-head">
+          <button id="sidebar-toggle" type="button" class="sidebar-toggle" aria-label="Seitenleiste umschalten" title="Seitenleiste umschalten">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path fill="currentColor" d="M21,15.61L19.59,17L14.58,12L19.59,7L21,8.39L17.44,12L21,15.61M3,6H16V8H3V6M3,13V11H13V13H3M3,18V16H16V18H3Z"></path>
+            </svg>
+          </button>
           <button id="new-chat-btn" type="button" class="new-chat-btn">+ Neuer Chat</button>
         </div>
         <div id="chat-list" class="chat-list"></div>
@@ -292,6 +305,7 @@
       this._sessionId = 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
       this._chatId = null;
       this._chats = [];
+      this._sidebarExpanded = true;
     }
 
     connectedCallback() {
@@ -301,6 +315,7 @@
       var sendBtn = this.shadowRoot.getElementById('send');
       var threadEl = this.shadowRoot.getElementById('thread');
       var newChatBtn = this.shadowRoot.getElementById('new-chat-btn');
+      var sidebarToggle = this.shadowRoot.getElementById('sidebar-toggle');
 
       /* Prompt-Vorschläge + Sync-Button: aus /config.json laden */
       this._renderSuggestions(PROMPT_SUGGESTIONS, input);
@@ -327,6 +342,10 @@
       sendBtn.addEventListener('click',  function () { self._send(); });
       input.addEventListener('keydown',  function (e) { if (e.key === 'Enter') self._send(); });
       if (newChatBtn) newChatBtn.addEventListener('click', function () { self._createNewChat(true); });
+      if (sidebarToggle) sidebarToggle.addEventListener('click', function () {
+        self._sidebarExpanded = !self._sidebarExpanded;
+        self._applySidebarState();
+      });
 
       /* Skeleton ausblenden sobald Bild geladen */
       threadEl.addEventListener('load', function (e) {
@@ -363,6 +382,13 @@
       });
 
       this._loadChats();
+      this._applySidebarState();
+    }
+
+    _applySidebarState() {
+      var aside = this.shadowRoot.querySelector('.sidebar');
+      if (!aside) return;
+      aside.setAttribute('aria-expanded', this._sidebarExpanded ? 'true' : 'false');
     }
 
     _shortDate(ts) {
