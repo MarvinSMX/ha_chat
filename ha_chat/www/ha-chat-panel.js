@@ -144,15 +144,7 @@
     <div class="img-lightbox" id="img-lightbox" style="display:none"><img id="img-lightbox-img" src="" alt=""></div>
     <div class="container">
       <div class="main">
-        <div class="top-bar">
-          <div id="graph-status" style="display:none" class="graph-status"></div>
-          <button id="sync-btn" class="sync-btn" style="display:none" title="Doku-Sync starten">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
-            </svg>
-            Sync
-          </button>
-        </div>
+        <div class="top-bar"></div>
         <div class="chat-inner">
           <div class="thread" id="thread"><div class="msg-col" id="msg-col"></div></div>
           <div class="input-area">
@@ -343,9 +335,7 @@
         })
         .catch(function () {});
 
-      /* Sync-Button */
-      var syncBtn = this.shadowRoot.getElementById('sync-btn');
-      if (syncBtn) syncBtn.addEventListener('click', function () { self._triggerSync(); });
+      /* Sync-Button (nur Sidebar) */
       var syncBtnSidebar = this.shadowRoot.getElementById('sync-btn-sidebar');
       if (syncBtnSidebar) syncBtnSidebar.addEventListener('click', function () { self._triggerSync(); });
 
@@ -402,6 +392,11 @@
       var aside = this.shadowRoot.querySelector('.sidebar');
       if (!aside) return;
       aside.setAttribute('aria-expanded', this._sidebarExpanded ? 'true' : 'false');
+
+      var graph = this.shadowRoot.getElementById('graph-status-sidebar');
+      if (graph) graph.style.display = this._sidebarExpanded ? '' : 'none';
+      var sync = this.shadowRoot.getElementById('sync-btn-sidebar');
+      if (sync) sync.style.display = this._sidebarExpanded ? 'flex' : 'none';
     }
 
     _shortDate(ts) {
@@ -663,18 +658,15 @@
     /* ── MS Graph Status (Header, Device Code Flow) ─────────────────── */
     _checkGraphStatus() {
       var self = this;
-      var bar = this.shadowRoot.getElementById('graph-status');
       var barSide = this.shadowRoot.getElementById('graph-status-sidebar');
-      if (!bar && !barSide) return;
+      if (!barSide) return;
       fetch(apiBase() + '/api/graph_status')
         .then(function (r) { return r.json().catch(function () { return {}; }); })
         .then(function (s) {
           if (!s.configured) {
-            if (bar) bar.style.display = 'none';
             if (barSide) barSide.style.display = 'none';
             return;
           }
-          if (bar) bar.style.display = 'flex';
           if (barSide) barSide.style.display = 'flex';
 
           function setHtml(target) {
@@ -689,11 +681,9 @@
             }
           }
 
-          setHtml(bar);
           setHtml(barSide);
         })
         .catch(function () {
-          if (bar) bar.style.display = 'none';
           if (barSide) barSide.style.display = 'none';
         });
     }
