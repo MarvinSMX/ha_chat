@@ -11,6 +11,7 @@
  *   icon, zIndex
  *   title: Popup-Header + FAB-Tooltip (Standard: HA Chat)
  *   welcome_title, welcome_subtitle: Empty-State (optional)
+ *   welcome_image_url: optional eigenes Bild statt hand.png neben ha-chat-fab.js
  *   ha_bearer_token: optional Long-Lived Token (wie curl -H "Authorization: Bearer …")
  *   addon_direct_url: optional http(s)://host:PORT – umgeht HA-Ingress (wie Zircon3D-Workaround)
  */
@@ -40,6 +41,27 @@
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
       .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function fabScriptDirectoryUrl() {
+    try {
+      const u = import.meta.url;
+      if (typeof u === 'string' && u) {
+        const clean = u.split('?')[0].split('#')[0];
+        const slash = clean.lastIndexOf('/');
+        if (slash >= 0) return clean.slice(0, slash + 1);
+      }
+    } catch (_) {}
+    try {
+      const nodes = document.querySelectorAll('script[src*="ha-chat-fab"]');
+      const el = nodes[nodes.length - 1];
+      if (el && el.src) {
+        const clean = el.src.split('?')[0];
+        const slash = clean.lastIndexOf('/');
+        if (slash >= 0) return clean.slice(0, slash + 1);
+      }
+    } catch (_) {}
+    return '';
   }
 
   function parseJsonResponse(r) {
@@ -243,6 +265,7 @@
       .${POPUP_CLASS} .fab-status{font-size:0.75rem;color:#888;padding:4px 10px;display:none;}
       .${POPUP_CLASS} .empty-hint{text-align:center;color:#666;font-size:0.85rem;padding:24px 12px;}
       .${POPUP_CLASS} .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100%;padding:18px 10px 10px;}
+      .${POPUP_CLASS} .empty-welcome-img{display:block;width:72px;height:72px;object-fit:contain;margin:0 auto 10px;user-select:none;-webkit-user-drag:none;}
       .${POPUP_CLASS} .empty-welcome{font-size:1rem;font-weight:600;color:#d8d8d8;text-align:center;margin-bottom:8px;}
       .${POPUP_CLASS} .empty-sub{font-size:0.85rem;color:#888;text-align:center;margin-bottom:14px;}
       .${POPUP_CLASS} .prompt-suggestions{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;max-width:96%;}
@@ -389,6 +412,15 @@
       const w = typeof c.welcome_subtitle === 'string' ? c.welcome_subtitle.trim() : '';
       if (w) return w;
       return 'Starte mit einem Vorschlag oder schreibe eine eigene Nachricht.';
+    }
+
+    _welcomeHandSrc() {
+      const c = this._config || {};
+      const custom = typeof c.welcome_image_url === 'string' ? c.welcome_image_url.trim() : '';
+      if (custom) return custom;
+      const dir = fabScriptDirectoryUrl();
+      if (dir) return dir + 'hand.png';
+      return '';
     }
 
     _applyPopupLabels() {
@@ -774,8 +806,13 @@
         const suggestions = PROMPT_SUGGESTIONS
           .map((s) => '<button type="button" class="prompt-suggestion" data-suggestion="' + escapeAttr(s) + '">' + escapeHtml(s) + '</button>')
           .join('');
+        const handSrc = this._welcomeHandSrc();
+        const handImg = handSrc
+          ? '<img class="empty-welcome-img" src="' + escapeAttr(handSrc) + '" alt="" width="72" height="72" decoding="async" />'
+          : '';
         col.innerHTML = ''
           + '<div class="empty-state">'
+          + handImg
           + '<div class="empty-welcome">' + escapeHtml(this._welcomeTitle()) + '</div>'
           + '<div class="empty-sub">' + escapeHtml(this._welcomeSubtitle()) + '</div>'
           + '<div class="prompt-suggestions">' + suggestions + '</div>'
