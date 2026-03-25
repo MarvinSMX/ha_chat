@@ -108,6 +108,15 @@
     return document.body;
   }
 
+  function cleanupLegacyOverlays() {
+    const root = getOverlayRoot();
+    if (!root || !root.querySelectorAll) return;
+    const legacy = root.querySelectorAll(`.${OVERLAY_CLASS}:not([data-owner="ha-chat-fab"]), .${POPUP_CLASS}:not([data-owner="ha-chat-fab"])`);
+    legacy.forEach((el) => {
+      try { el.remove(); } catch (_) {}
+    });
+  }
+
   function createIconEl(iconName) {
     const wrap = document.createElement('span');
     wrap.style.display = 'inline-flex';
@@ -186,6 +195,7 @@
     connectedCallback() {
       ensureStyles(document.head || document.documentElement);
       ensureStyles(getOverlayRoot());
+      cleanupLegacyOverlays();
       this._mountOverlay();
       this._updateOverlay();
     }
@@ -201,6 +211,7 @@
       const host = document.createElement('div');
       host.className = OVERLAY_CLASS;
       host.setAttribute('data-instance', this._instanceId);
+      host.setAttribute('data-owner', 'ha-chat-fab');
       host.style.display = 'flex';
 
       const btn = document.createElement('button');
@@ -213,7 +224,11 @@
         : 'mdi:chat';
       btn.appendChild(createIconEl(iconName));
 
-      btn.addEventListener('click', () => this._togglePopup());
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this._togglePopup();
+      }, true);
 
       host.appendChild(btn);
       root.appendChild(host);
@@ -226,6 +241,7 @@
       const pop = document.createElement('div');
       pop.className = POPUP_CLASS;
       pop.setAttribute('data-instance', this._instanceId);
+      pop.setAttribute('data-owner', 'ha-chat-fab');
       pop.setAttribute('data-open', 'false');
 
       pop.innerHTML = `
