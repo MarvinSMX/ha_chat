@@ -37,8 +37,41 @@
       }
       .${OVERLAY_CLASS} button:hover{filter:brightness(0.95)}
       .${OVERLAY_CLASS} ha-icon{color:inherit}
+      .${OVERLAY_CLASS} svg{width:22px;height:22px;display:block}
     `;
     root.appendChild(style);
+  }
+
+  function createIconEl(iconName) {
+    const wrap = document.createElement('span');
+    wrap.style.display = 'inline-flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.justifyContent = 'center';
+
+    const haIcon = document.createElement('ha-icon');
+    haIcon.setAttribute('icon', iconName || 'mdi:chat');
+    wrap.appendChild(haIcon);
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('fill', 'currentColor');
+    path.setAttribute('d', 'M20,2H4A2,2 0 0,0 2,4V22L6,18H20A2,2 0 0,0 22,16V4A2,2 0 0,0 20,2M20,16H5.17L4,17.17V4H20V16Z');
+    svg.appendChild(path);
+    svg.style.display = 'none';
+    wrap.appendChild(svg);
+
+    setTimeout(() => {
+      const upgraded = !!(customElements.get('ha-icon') && haIcon.shadowRoot);
+      if (!upgraded) {
+        haIcon.style.display = 'none';
+        svg.style.display = 'block';
+      }
+    }, 0);
+
+    return wrap;
   }
 
   function navigate(href) {
@@ -88,14 +121,17 @@
       const host = document.createElement('div');
       host.className = OVERLAY_CLASS;
       host.setAttribute('data-instance', this._instanceId);
+      host.style.display = 'flex';
 
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.setAttribute('aria-label', 'HA Chat öffnen');
       btn.title = 'HA Chat';
 
-      const icon = document.createElement('ha-icon');
-      btn.appendChild(icon);
+      const iconName = (this._config && typeof this._config.icon === 'string' && this._config.icon.trim())
+        ? this._config.icon.trim()
+        : 'mdi:chat';
+      btn.appendChild(createIconEl(iconName));
 
       btn.addEventListener('click', () => {
         const href = (this._config && typeof this._config.href === 'string' && this._config.href.trim())
@@ -118,7 +154,7 @@
 
     _updateOverlay() {
       if (!this._overlayEl) return;
-      const z = (this._config && typeof this._config.zIndex === 'number') ? this._config.zIndex : 9999;
+      const z = (this._config && typeof this._config.zIndex === 'number') ? this._config.zIndex : 100000;
       this._overlayEl.style.zIndex = String(z);
 
       const iconName = (this._config && typeof this._config.icon === 'string' && this._config.icon.trim())
