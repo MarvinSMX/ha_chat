@@ -188,7 +188,7 @@
     }
 
     static getStubConfig() {
-      return { href: '/hassio/ingress/ha_chat', icon: 'mdi:chat' };
+      return { href: '/app/2954ddb4_ha_chat', icon: 'mdi:chat', slug: '2954ddb4_ha_chat' };
     }
 
     getCardSize() {
@@ -306,12 +306,30 @@
 
     async _resolveApiBase() {
       if (this._resolvedApiBase) return this._resolvedApiBase;
+      const slug = (this._config && typeof this._config.slug === 'string' && this._config.slug.trim())
+        ? this._config.slug.trim()
+        : 'ha_chat';
       const cfgHref = (this._config && typeof this._config.href === 'string' && this._config.href.trim())
         ? this._config.href.trim().replace(/\/$/, '')
         : '';
       const candidates = [];
       if (cfgHref) candidates.push(cfgHref);
+      candidates.push('/app/2954ddb4_ha_chat');
       candidates.push('/hassio/ingress/ha_chat');
+
+      try {
+        const panels = await fetchJson('/api/panels');
+        const keys = Object.keys(panels || {});
+        for (let i = 0; i < keys.length; i++) {
+          const key = keys[i];
+          const p = panels[key] || {};
+          const urlPath = String(p.url_path || '').trim();
+          if (!urlPath) continue;
+          if (urlPath.endsWith('_' + slug) || urlPath === slug || urlPath.endsWith('/' + slug)) {
+            candidates.push('/' + urlPath.replace(/^\/+/, ''));
+          }
+        }
+      } catch (_) {}
 
       for (let i = 0; i < candidates.length; i++) {
         const base = candidates[i];
