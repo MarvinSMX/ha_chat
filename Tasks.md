@@ -23,6 +23,7 @@
 - [x] Popup-Container-Rundung wie Chat-Bubbles (unten rechts kleiner)
 - [x] Popup exakt unten rechts (FAB-Position) + Card belegt keinen Dashboard-Platz
 - [x] Popup API-Base robust auf funktionierenden Ingress-Pfad (`/hassio/ingress/ha_chat`) umgestellt
+- [x] Popup robust gemacht: kein `POST /api/chats` mehr (405 vermeiden), bessere Fehlertexte mit URL/Status
 - [x] Bestehende Frontend- und Backend-Chatlogik analysiert (`ha_chat/www/ha-chat-panel.js`, `ha_chat/server.js`)
 - [x] Empty-State mit zentriertem `logo.svg` im Chatbereich umgesetzt
 - [x] Rechte Sidebar mit Chatliste und Button `+ Neuer Chat` in der UI ergänzt

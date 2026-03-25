@@ -163,8 +163,10 @@
     const r = await fetch(url, Object.assign({ credentials: 'include' }, opts || {}));
     const t = await r.text();
     let data = null;
-    try { data = JSON.parse(t || '{}'); } catch (_) { throw new Error('Kein JSON: ' + (t || '').slice(0, 60)); }
-    if (!r.ok) throw new Error((data && (data.error || data.message)) || ('HTTP ' + r.status));
+    try { data = JSON.parse(t || '{}'); } catch (_) {
+      throw new Error('Kein JSON (' + r.status + ' ' + url + '): ' + (t || '').slice(0, 80));
+    }
+    if (!r.ok) throw new Error(((data && (data.error || data.message)) || ('HTTP ' + r.status)) + ' (' + url + ')');
     return data;
   }
 
@@ -333,10 +335,6 @@
         const chats = (list && Array.isArray(list.chats)) ? list.chats : [];
         if (chats.length) {
           await this._loadChat(chats[0].id);
-        } else {
-          const created = await fetchJson(joinUrl(api, '/api/chats'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-          const chat = created && created.chat ? created.chat : null;
-          if (chat && chat.id) await this._loadChat(chat.id);
         }
       } catch (e) {
         this._showErr(e.message || String(e));
@@ -396,6 +394,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: text, chat_id: this._chatId })
         });
+        if (d && d.chat_id && !this._chatId) this._chatId = d.chat_id;
         const answer = d && (d.answer != null ? d.answer : '');
         this._thread.push({ role: 'assistant', content: String(answer || '') });
         this._renderThread();
