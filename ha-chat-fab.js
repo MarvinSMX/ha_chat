@@ -190,7 +190,7 @@
         position:fixed;
         inset:0;
         display:none;
-        background:transparent;
+        background:rgba(0,0,0,0.32);
         pointer-events:auto;
         -webkit-tap-highlight-color:transparent;
       }

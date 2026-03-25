@@ -54,6 +54,7 @@
 - [x] FAB: optional `addon_direct_url` (Direktport wie Zircon3D-Workaround); Server CORS `Authorization` für Preflight
 - [x] Add-on `config.yaml`: Port-Mapping korrigiert (`8099/tcp: 8765` = App im Container 8099, erreichbar am Host unter **8765**)
 - [x] FAB Empty-State: `hand.png` über Willkommenstext; URL aus `import.meta.url` + optional `welcome_image_url`; README ergänzt
+- [x] FAB: Backdrop beim geöffneten Popup leicht abgedunkelt (`rgba(0,0,0,0.32)`)
 
 ## Nachfolgende Schritte
 
