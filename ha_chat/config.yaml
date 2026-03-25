@@ -10,8 +10,9 @@ arch:
   - armv7
   - i386
 startup: application
+# Container-Port (App) → Host-Port (im Browser: http://<ha>:8765)
 ports:
-  8765/tcp: 8099
+  8099/tcp: 8765
 ingress: true
 options:
   n8n_inference_webhook_url: ""
