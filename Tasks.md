@@ -15,6 +15,7 @@
 - [x] HA Auth: Chats an eingeloggten HA-User gebunden (Ingress-Header, serverseitiges Scoping, Migration von `chats.json`)
 - [x] UI: HA-User im Sidebar-Header, Graph+Sync zurück in Main (links), Delete nur bei Hover
 - [x] Chatliste: Delete absolut positioniert (volle Breite ohne Hover), /api/me Debug für Ingress-Header
+- [x] Ingress-Fix: Server normalisiert /api/hassio_ingress/<token>/… damit /api/* Endpoints funktionieren
 - [x] Bestehende Frontend- und Backend-Chatlogik analysiert (`ha_chat/www/ha-chat-panel.js`, `ha_chat/server.js`)
 - [x] Empty-State mit zentriertem `logo.svg` im Chatbereich umgesetzt
 - [x] Rechte Sidebar mit Chatliste und Button `+ Neuer Chat` in der UI ergänzt

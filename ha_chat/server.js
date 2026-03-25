@@ -304,7 +304,18 @@ async function callN8n(webhookUrl, body, logLabel) {
 
 const server = http.createServer(async (req, res) => {
   const parsed = url.parse(req.url || '', true);
-  const pathname = (parsed.pathname || '/').replace(/\/$/, '') || '/';
+  const rawPathname = parsed.pathname || '/';
+  function normalizeIngressPath(p) {
+    if (!p) return '/';
+    // HA Ingress typical: /api/hassio_ingress/<token>/<rest>
+    if (p.startsWith('/api/hassio_ingress/')) {
+      const parts = p.split('/'); // ["", "api", "hassio_ingress", "<token>", ...rest]
+      if (parts.length <= 4) return '/';
+      return '/' + parts.slice(4).join('/');
+    }
+    return p;
+  }
+  const pathname = (normalizeIngressPath(rawPathname) || '/').replace(/\/$/, '') || '/';
 
   // CORS für Ingress
   res.setHeader('Access-Control-Allow-Origin', '*');
