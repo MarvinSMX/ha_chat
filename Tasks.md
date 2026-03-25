@@ -47,6 +47,8 @@
 
 - [x] FAB-Fallback-Fix: Bei 401/403 wird ingress_api_base jetzt wirklich Ã¼bersprungen und dynamischer Lookup erzwungen
 
+- [x] FAB-API-Calls senden jetzt ebenfalls User-Authorization: Bearer (nicht nur Ingress-Lookup)
+
 ## Nachfolgende Schritte
 
 - [ ] Optional: Verbesserte mobile Darstellung der rechten Sidebar (Overlay/Collapse)

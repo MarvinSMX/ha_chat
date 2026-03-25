@@ -484,15 +484,23 @@
     _fetchApi(path, init, canRetry) {
       const self = this;
       const mayRetry = canRetry !== false;
+      const token = this._haAccessToken();
+      const addAuth = (opts) => {
+        const o = { ...(opts || {}) };
+        const h = { ...(o.headers || {}) };
+        if (token && !h.Authorization) h.Authorization = 'Bearer ' + token;
+        o.headers = h;
+        return o;
+      };
       return this._ensureApiBase(false)
-        .then(() => fetch(this._apiUrl(path), { ...fetchOpts, ...(init || {}) }))
+        .then(() => fetch(this._apiUrl(path), { ...fetchOpts, ...addAuth(init) }))
         .then((res) => {
           // If manual ingress path is stale/user-mismatched, re-resolve once per user.
           if (mayRetry && (res.status === 401 || res.status === 403)) {
             self._apiPathPrefix = null;
             self._usingManualBase = false;
             return self._ensureApiBase(true)
-              .then(() => fetch(self._apiUrl(path), { ...fetchOpts, ...(init || {}) }));
+              .then(() => fetch(self._apiUrl(path), { ...fetchOpts, ...addAuth(init) }));
           }
           return res;
         });
