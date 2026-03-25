@@ -16,6 +16,12 @@
   const OVERLAY_CLASS = 'ha-chat-fab-overlay';
   const STYLE_ID = 'ha-chat-fab-styles';
   const POPUP_CLASS = 'ha-chat-fab-popup';
+  const PROMPT_SUGGESTIONS = [
+    'Was kann ich dich fragen?',
+    'Welche Lichter sind gerade an?',
+    'Zeig mir den Status der Heizung',
+    'Welche Geräte sind aktiv?',
+  ];
 
   const fetchOpts = { credentials: 'same-origin' };
 
@@ -222,6 +228,12 @@
       .${POPUP_CLASS} .fab-error{color:#ff8a80;font-size:0.82rem;padding:0 10px 6px;display:none;}
       .${POPUP_CLASS} .fab-status{font-size:0.75rem;color:#888;padding:4px 10px;display:none;}
       .${POPUP_CLASS} .empty-hint{text-align:center;color:#666;font-size:0.85rem;padding:24px 12px;}
+      .${POPUP_CLASS} .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100%;padding:18px 10px 10px;}
+      .${POPUP_CLASS} .empty-welcome{font-size:1rem;font-weight:600;color:#d8d8d8;text-align:center;margin-bottom:8px;}
+      .${POPUP_CLASS} .empty-sub{font-size:0.85rem;color:#888;text-align:center;margin-bottom:14px;}
+      .${POPUP_CLASS} .prompt-suggestions{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;max-width:96%;}
+      .${POPUP_CLASS} .prompt-suggestion{padding:5px 12px;background:transparent;border:1px solid #3a3a3a;color:#aaa;border-radius:16px;cursor:pointer;font-size:0.82rem;font-family:inherit;white-space:nowrap;transition:border-color .15s,color .15s;}
+      .${POPUP_CLASS} .prompt-suggestion:hover{border-color:#009AC7;color:#009AC7;}
     `;
     r.appendChild(style);
   }
@@ -595,7 +607,23 @@
       }
 
       if (this._thread.length === 0) {
-        col.innerHTML = '<div class="empty-hint">Neuer Chat – Nachricht eingeben.</div>';
+        const suggestions = PROMPT_SUGGESTIONS
+          .map((s) => '<button type="button" class="prompt-suggestion" data-suggestion="' + escapeAttr(s) + '">' + escapeHtml(s) + '</button>')
+          .join('');
+        col.innerHTML = ''
+          + '<div class="empty-state">'
+          + '<div class="empty-welcome">Willkommen im HA Chat</div>'
+          + '<div class="empty-sub">Starte mit einem Vorschlag oder schreibe eine eigene Nachricht.</div>'
+          + '<div class="prompt-suggestions">' + suggestions + '</div>'
+          + '</div>';
+        col.querySelectorAll('button[data-suggestion]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const inp = this._popupEl && this._popupEl.querySelector('#fab-input');
+            if (!inp) return;
+            inp.value = btn.getAttribute('data-suggestion') || '';
+            inp.focus();
+          });
+        });
         if (threadEl) threadEl.scrollTop = 0;
         return;
       }

@@ -40,6 +40,7 @@
 - [x] README_HACS: Popup-Verhalten (immer neuer Chat, keine Auswahl/Löschen) dokumentiert
 - [x] FAB-Popup UI: Header ohne Border, Composer ohne obere Border
 - [x] FAB-Popup UX: Klick außerhalb schließt Popup (mousedown/touchstart)
+- [x] FAB-Popup Empty-State: Willkommens-Screen + Suggestion-Chips wie in der App (bei leerem Chat)
 
 ## Nachfolgende Schritte
 
