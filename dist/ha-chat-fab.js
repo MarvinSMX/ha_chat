@@ -13,9 +13,9 @@
   const OVERLAY_CLASS = 'ha-chat-fab-overlay';
   const STYLE_ID = 'ha-chat-fab-styles';
 
-  function ensureStyles() {
-    const root = document.head || document.documentElement;
-    if (!root || root.getElementById(STYLE_ID)) return;
+  function ensureStyles(root) {
+    const r = root || document.head || document.documentElement;
+    if (!r || r.getElementById && r.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
@@ -39,7 +39,13 @@
       .${OVERLAY_CLASS} ha-icon{color:inherit}
       .${OVERLAY_CLASS} svg{width:22px;height:22px;display:block}
     `;
-    root.appendChild(style);
+    r.appendChild(style);
+  }
+
+  function getOverlayRoot() {
+    const ha = document.querySelector('home-assistant');
+    if (ha && ha.shadowRoot) return ha.shadowRoot;
+    return document.body;
   }
 
   function createIconEl(iconName) {
@@ -107,7 +113,8 @@
     }
 
     connectedCallback() {
-      ensureStyles();
+      ensureStyles(document.head || document.documentElement);
+      ensureStyles(getOverlayRoot());
       this._mountOverlay();
       this._updateOverlay();
     }
@@ -118,6 +125,7 @@
 
     _mountOverlay() {
       if (this._overlayEl) return;
+      const root = getOverlayRoot();
       const host = document.createElement('div');
       host.className = OVERLAY_CLASS;
       host.setAttribute('data-instance', this._instanceId);
@@ -141,7 +149,7 @@
       });
 
       host.appendChild(btn);
-      document.body.appendChild(host);
+      root.appendChild(host);
       this._overlayEl = host;
     }
 
