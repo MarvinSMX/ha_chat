@@ -331,7 +331,7 @@
       this._sessionId = 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
       this._chatId = null;
       this._chats = [];
-      this._sidebarExpanded = true;
+      this._sidebarExpanded = false;
     }
 
     connectedCallback() {
