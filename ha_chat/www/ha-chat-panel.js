@@ -122,14 +122,17 @@
       .sidebar { width: var(--ha-chat-sidebar-width, 256px); max-width: 45vw; background: var(--sidebar-background-color, #141414); color: var(--sidebar-text-color, var(--primary-text-color, #e1e1e1)); display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--divider-color, rgba(255,255,255,0.12)); }
       .sidebar[aria-expanded="false"] { width: var(--ha-chat-sidebar-collapsed-width, 56px); }
       .sidebar-head { padding: 10px; border-bottom: 1px solid var(--divider-color, rgba(255,255,255,0.12)); display: flex; align-items: center; gap: 8px; }
+      .sidebar-head-left { min-width: 0; flex: 1; display: flex; align-items: center; gap: 8px; }
+      .sidebar-head-right { display: flex; align-items: center; gap: 6px; }
       .sidebar-toggle { width: 40px; height: 40px; border: none; background: transparent; color: var(--sidebar-icon-color, var(--secondary-text-color, #9b9b9b)); border-radius: 9999px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
       .sidebar-toggle:hover { background: rgba(255,255,255,0.06); }
       .sidebar-toggle svg { width: 22px; height: 22px; }
-      .new-chat-btn { flex: 1; border: 1px solid var(--ha-color-border-primary-normal, var(--primary-color, #009ac7)); border-radius: var(--ha-border-radius-md, 8px); background: var(--ha-color-fill-primary-quiet-resting, rgba(0, 154, 199, 0.10)); color: var(--ha-color-text-link, #7bd4fb); padding: 9px 10px; cursor: pointer; font-family: inherit; font-size: 0.9rem; }
-      .new-chat-btn:hover { background: var(--ha-color-fill-primary-quiet-hover, rgba(0, 154, 199, 0.16)); }
-      .sidebar[aria-expanded="false"] .new-chat-btn { display: none; }
       .chat-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
       .sidebar[aria-expanded="false"] .chat-list { padding: 6px; }
+      .new-chat-item { width: 100%; text-align: left; border: none; border-radius: var(--ha-border-radius-md, 8px); background: var(--ha-color-fill-primary-quiet-resting, rgba(0, 154, 199, 0.10)); color: var(--ha-color-text-link, #7bd4fb); padding: 10px 10px; cursor: pointer; font-family: inherit; }
+      .new-chat-item:hover { background: var(--ha-color-fill-primary-quiet-hover, rgba(0, 154, 199, 0.16)); }
+      .sidebar[aria-expanded="false"] .new-chat-item { padding: 10px 0; text-align: center; }
+      .sidebar[aria-expanded="false"] .new-chat-item span { display: none; }
       .chat-item { width: 100%; text-align: left; border: none; border-radius: var(--ha-border-radius-md, 8px); background: transparent; color: var(--sidebar-text-color, var(--primary-text-color, #e1e1e1)); padding: 10px 10px; cursor: pointer; font-family: inherit; position: relative; }
       .chat-item:hover { background: rgba(255,255,255,0.06); }
       .chat-item.active { background: rgba(var(--rgb-primary-color, 0,154,199), 0.18); }
@@ -168,12 +171,22 @@
       </div>
       <aside class="sidebar">
         <div class="sidebar-head">
-          <button id="sidebar-toggle" type="button" class="sidebar-toggle" aria-label="Seitenleiste umschalten" title="Seitenleiste umschalten">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path fill="currentColor" d="M21,15.61L19.59,17L14.58,12L19.59,7L21,8.39L17.44,12L21,15.61M3,6H16V8H3V6M3,13V11H13V13H3M3,18V16H16V18H3Z"></path>
-            </svg>
-          </button>
-          <button id="new-chat-btn" type="button" class="new-chat-btn">+ Neuer Chat</button>
+          <div class="sidebar-head-left">
+            <div id="graph-status-sidebar" style="display:none" class="graph-status"></div>
+            <button id="sync-btn-sidebar" class="sync-btn" style="display:none" title="Doku-Sync starten">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
+              </svg>
+              Sync
+            </button>
+          </div>
+          <div class="sidebar-head-right">
+            <button id="sidebar-toggle" type="button" class="sidebar-toggle" aria-label="Seitenleiste umschalten" title="Seitenleiste umschalten">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path fill="currentColor" d="M21,15.61L19.59,17L14.58,12L19.59,7L21,8.39L17.44,12L21,15.61M3,6H16V8H3V6M3,13V11H13V13H3M3,18V16H16V18H3Z"></path>
+              </svg>
+            </button>
+          </div>
         </div>
         <div id="chat-list" class="chat-list"></div>
       </aside>
@@ -314,7 +327,6 @@
       var input   = this.shadowRoot.getElementById('input');
       var sendBtn = this.shadowRoot.getElementById('send');
       var threadEl = this.shadowRoot.getElementById('thread');
-      var newChatBtn = this.shadowRoot.getElementById('new-chat-btn');
       var sidebarToggle = this.shadowRoot.getElementById('sidebar-toggle');
 
       /* Prompt-Vorschläge + Sync-Button: aus /config.json laden */
@@ -334,6 +346,8 @@
       /* Sync-Button */
       var syncBtn = this.shadowRoot.getElementById('sync-btn');
       if (syncBtn) syncBtn.addEventListener('click', function () { self._triggerSync(); });
+      var syncBtnSidebar = this.shadowRoot.getElementById('sync-btn-sidebar');
+      if (syncBtnSidebar) syncBtnSidebar.addEventListener('click', function () { self._triggerSync(); });
 
       /* MS Graph Login-Status prüfen */
       this._checkGraphStatus();
@@ -341,7 +355,6 @@
       /* Senden */
       sendBtn.addEventListener('click',  function () { self._send(); });
       input.addEventListener('keydown',  function (e) { if (e.key === 'Enter') self._send(); });
-      if (newChatBtn) newChatBtn.addEventListener('click', function () { self._createNewChat(true); });
       if (sidebarToggle) sidebarToggle.addEventListener('click', function () {
         self._sidebarExpanded = !self._sidebarExpanded;
         self._applySidebarState();
@@ -405,6 +418,14 @@
       if (!listEl) return;
       listEl.innerHTML = '';
       var self = this;
+
+      var newBtn = document.createElement('button');
+      newBtn.type = 'button';
+      newBtn.className = 'new-chat-item';
+      newBtn.innerHTML = '<strong>+</strong> <span>Neuer Chat</span>';
+      newBtn.addEventListener('click', function () { self._createNewChat(true); });
+      listEl.appendChild(newBtn);
+
       this._chats.forEach(function (chat) {
         var btn = document.createElement('button');
         btn.type = 'button';
@@ -643,23 +664,38 @@
     _checkGraphStatus() {
       var self = this;
       var bar = this.shadowRoot.getElementById('graph-status');
-      if (!bar) return;
+      var barSide = this.shadowRoot.getElementById('graph-status-sidebar');
+      if (!bar && !barSide) return;
       fetch(apiBase() + '/api/graph_status')
         .then(function (r) { return r.json().catch(function () { return {}; }); })
         .then(function (s) {
-          if (!s.configured) { bar.style.display = 'none'; return; }
-          bar.style.display = 'flex';
-          if (s.authenticated) {
-            bar.innerHTML = '<span class="graph-login-dot ok"></span>Graph';
-          } else {
-            bar.innerHTML = '<span class="graph-login-dot err"></span>'
-              + '<button class="graph-login-btn" id="graph-login-btn">Graph anmelden</button>';
-            bar.querySelector('#graph-login-btn').addEventListener('click', function () {
-              self._startDeviceLogin();
-            });
+          if (!s.configured) {
+            if (bar) bar.style.display = 'none';
+            if (barSide) barSide.style.display = 'none';
+            return;
           }
+          if (bar) bar.style.display = 'flex';
+          if (barSide) barSide.style.display = 'flex';
+
+          function setHtml(target) {
+            if (!target) return;
+            if (s.authenticated) {
+              target.innerHTML = '<span class="graph-login-dot ok"></span>Graph';
+            } else {
+              target.innerHTML = '<span class="graph-login-dot err"></span>'
+                + '<button class="graph-login-btn">Graph anmelden</button>';
+              var b = target.querySelector('.graph-login-btn');
+              if (b) b.addEventListener('click', function () { self._startDeviceLogin(); });
+            }
+          }
+
+          setHtml(bar);
+          setHtml(barSide);
         })
-        .catch(function () { bar.style.display = 'none'; });
+        .catch(function () {
+          if (bar) bar.style.display = 'none';
+          if (barSide) barSide.style.display = 'none';
+        });
     }
 
     _startDeviceLogin() {
