@@ -21,7 +21,9 @@
       :host { display: block; height: 100%; }
       .container { height: 100%; display: flex; flex-direction: row; padding: 0; background: var(--primary-background-color, #1c1c1c); color: var(--primary-text-color, #e0e0e0); font-family: inherit; gap: 0; position: relative; }
       .main { min-width: 0; flex: 1; display: flex; flex-direction: column; }
-      .top-bar { width: 100%; display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 16px 16px 10px; min-height: 32px; flex-shrink: 0; }
+      .top-bar { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 16px 10px; min-height: 32px; flex-shrink: 0; }
+      .top-bar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+      .top-bar-right { display: flex; align-items: center; gap: 10px; }
       .chat-inner { width: 100%; flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 0 16px 16px; }
 
       /* ── Thread: volle Breite, Scrollbar am Rand ── */
@@ -122,6 +124,7 @@
       .sidebar-head { min-height: 56px; padding: 8px; border-bottom: 1px solid var(--divider-color, rgba(255,255,255,0.12)); display: flex; align-items: center; gap: 8px; box-sizing: border-box; }
       .sidebar-head-left { min-width: 0; flex: 1; display: flex; align-items: center; gap: 8px; }
       .sidebar-head-right { display: flex; align-items: center; gap: 6px; }
+      .sidebar-user { min-width: 0; font-size: 0.86rem; color: var(--sidebar-text-color, var(--primary-text-color, #e1e1e1)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .sidebar-toggle { width: 40px; height: 40px; border: none; background: transparent; color: var(--sidebar-icon-color, var(--secondary-text-color, #9b9b9b)); border-radius: 9999px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
       .sidebar-toggle:hover { background: rgba(255,255,255,0.06); }
       .sidebar-toggle svg { width: 22px; height: 22px; }
@@ -138,6 +141,8 @@
       .chat-delete-btn { width: 30px; height: 30px; border: none; border-radius: 8px; background: transparent; color: var(--secondary-text-color, #9b9b9b); cursor: pointer; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
       .chat-delete-btn:hover { background: rgba(255,255,255,0.08); color: #ff8a80; }
       .chat-delete-btn svg { width: 16px; height: 16px; }
+      .chat-delete-btn { opacity: 0; pointer-events: none; transition: opacity .12s ease; }
+      .chat-row:hover .chat-delete-btn { opacity: 1; pointer-events: auto; }
       .sidebar[aria-expanded="false"] .chat-row { justify-content: center; }
       .sidebar[aria-expanded="false"] .chat-item-title,
       .sidebar[aria-expanded="false"] .chat-delete-btn { display: none; }
@@ -155,7 +160,18 @@
         </svg>
       </button>
       <div class="main">
-        <div class="top-bar"></div>
+        <div class="top-bar">
+          <div class="top-bar-left">
+            <div id="graph-status" style="display:none" class="graph-status"></div>
+            <button id="sync-btn" class="sync-btn" style="display:none" title="Doku-Sync starten">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
+              </svg>
+              Sync
+            </button>
+          </div>
+          <div class="top-bar-right"></div>
+        </div>
         <div class="chat-inner">
           <div class="thread" id="thread"><div class="msg-col" id="msg-col"></div></div>
           <div class="input-area">
@@ -175,13 +191,7 @@
       <aside class="sidebar">
         <div class="sidebar-head">
           <div class="sidebar-head-left">
-            <div id="graph-status-sidebar" style="display:none" class="graph-status"></div>
-            <button id="sync-btn-sidebar" class="sync-btn" style="display:none" title="Doku-Sync starten">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
-              </svg>
-              Sync
-            </button>
+            <div id="sidebar-user" class="sidebar-user"></div>
           </div>
           <div class="sidebar-head-right">
             <button id="sidebar-toggle" type="button" class="sidebar-toggle" aria-label="Seitenleiste umschalten" title="Seitenleiste umschalten">
@@ -332,6 +342,7 @@
       var threadEl = this.shadowRoot.getElementById('thread');
       var sidebarToggle = this.shadowRoot.getElementById('sidebar-toggle');
       var sidebarExpandBtn = this.shadowRoot.getElementById('sidebar-expand-btn');
+      var syncBtn = this.shadowRoot.getElementById('sync-btn');
 
       /* Prompt-Vorschläge + Sync-Button: aus /config.json laden */
       this._renderSuggestions(PROMPT_SUGGESTIONS, input);
@@ -348,11 +359,11 @@
         .catch(function () {});
 
       /* Sync-Button (nur Sidebar) */
-      var syncBtnSidebar = this.shadowRoot.getElementById('sync-btn-sidebar');
-      if (syncBtnSidebar) syncBtnSidebar.addEventListener('click', function () { self._triggerSync(); });
+      if (syncBtn) syncBtn.addEventListener('click', function () { self._triggerSync(); });
 
       /* MS Graph Login-Status prüfen */
       this._checkGraphStatus();
+      this._loadMe();
 
       /* Senden */
       sendBtn.addEventListener('click',  function () { self._send(); });
@@ -425,6 +436,19 @@
       } catch (_) {
         return '';
       }
+    }
+
+    _loadMe() {
+      var self = this;
+      fetch(apiBase() + '/api/me')
+        .then(function (r) { return r.json().catch(function () { return {}; }); })
+        .then(function (d) {
+          var userId = (d && d.user_id) ? String(d.user_id) : '';
+          var label = userId && userId !== 'public' ? userId : 'Gast';
+          var el = self.shadowRoot.getElementById('sidebar-user');
+          if (el) el.textContent = label;
+        })
+        .catch(function () {});
     }
 
     _renderChatList() {
@@ -710,33 +734,27 @@
     /* ── MS Graph Status (Header, Device Code Flow) ─────────────────── */
     _checkGraphStatus() {
       var self = this;
-      var barSide = this.shadowRoot.getElementById('graph-status-sidebar');
-      if (!barSide) return;
+      var bar = this.shadowRoot.getElementById('graph-status');
+      if (!bar) return;
       fetch(apiBase() + '/api/graph_status')
         .then(function (r) { return r.json().catch(function () { return {}; }); })
         .then(function (s) {
           if (!s.configured) {
-            if (barSide) barSide.style.display = 'none';
+            bar.style.display = 'none';
             return;
           }
-          if (barSide) barSide.style.display = 'flex';
-
-          function setHtml(target) {
-            if (!target) return;
-            if (s.authenticated) {
-              target.innerHTML = '<span class="graph-login-dot ok"></span>Graph';
-            } else {
-              target.innerHTML = '<span class="graph-login-dot err"></span>'
-                + '<button class="graph-login-btn">Graph anmelden</button>';
-              var b = target.querySelector('.graph-login-btn');
-              if (b) b.addEventListener('click', function () { self._startDeviceLogin(); });
-            }
+          bar.style.display = 'flex';
+          if (s.authenticated) {
+            bar.innerHTML = '<span class="graph-login-dot ok"></span>Graph';
+          } else {
+            bar.innerHTML = '<span class="graph-login-dot err"></span>'
+              + '<button class="graph-login-btn">Graph anmelden</button>';
+            var b = bar.querySelector('.graph-login-btn');
+            if (b) b.addEventListener('click', function () { self._startDeviceLogin(); });
           }
-
-          setHtml(barSide);
         })
         .catch(function () {
-          if (barSide) barSide.style.display = 'none';
+          bar.style.display = 'none';
         });
     }
 

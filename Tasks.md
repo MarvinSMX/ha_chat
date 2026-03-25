@@ -13,6 +13,7 @@
 - [x] Chat-Sidebar: unnötige Meta-Infos entfernt (Nachrichten/Datum)
 - [x] Chat-Löschen ergänzt (Frontend + Backend DELETE Endpoint)
 - [x] HA Auth: Chats an eingeloggten HA-User gebunden (Ingress-Header, serverseitiges Scoping, Migration von `chats.json`)
+- [x] UI: HA-User im Sidebar-Header, Graph+Sync zurück in Main (links), Delete nur bei Hover
 - [x] Bestehende Frontend- und Backend-Chatlogik analysiert (`ha_chat/www/ha-chat-panel.js`, `ha_chat/server.js`)
 - [x] Empty-State mit zentriertem `logo.svg` im Chatbereich umgesetzt
 - [x] Rechte Sidebar mit Chatliste und Button `+ Neuer Chat` in der UI ergänzt

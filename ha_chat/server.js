@@ -328,6 +328,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Aktueller HA User (Ingress Header)
+  if (pathname === '/api/me' && req.method === 'GET') {
+    const userId = getHaUserId(req);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ user_id: userId }));
+    return;
+  }
+
   // Chats: Liste
   if (pathname === '/api/chats' && req.method === 'GET') {
     const userId = getHaUserId(req);
