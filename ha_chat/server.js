@@ -203,20 +203,46 @@ function collectBody(req) {
   });
 }
 
+function getHaUserId(req) {
+  const h = (req && req.headers) || {};
+  const raw =
+    h['x-hass-user-id'] ||
+    h['x-homeassistant-user-id'] ||
+    h['x-ha-user-id'] ||
+    h['x-hass-user'] ||
+    '';
+  const userId = String(raw || '').trim();
+  return userId || 'public';
+}
+
 function loadChatsStore() {
   try {
     const raw = fs.readFileSync(CHATS_PATH, 'utf-8');
     const parsed = JSON.parse(raw);
-    if (parsed && Array.isArray(parsed.chats)) return parsed;
+    // New format: { users: { [userId]: { chats: [...] } } }
+    if (parsed && parsed.users && typeof parsed.users === 'object') return parsed;
+    // Legacy format: { chats: [...] } -> migrate to public user
+    if (parsed && Array.isArray(parsed.chats)) return { users: { public: { chats: parsed.chats } } };
   } catch (_) {}
-  return { chats: [] };
+  return { users: { public: { chats: [] } } };
 }
 
 function saveChatsStore(store) {
   fs.writeFileSync(CHATS_PATH, JSON.stringify(store, null, 2), 'utf-8');
 }
 
-function createChat(title) {
+function ensureUserBucket(store, userId) {
+  if (!store.users || typeof store.users !== 'object') store.users = {};
+  if (!store.users[userId]) store.users[userId] = { chats: [] };
+  if (!Array.isArray(store.users[userId].chats)) store.users[userId].chats = [];
+}
+
+function findChat(store, userId, chatId) {
+  ensureUserBucket(store, userId);
+  return store.users[userId].chats.find((c) => c.id === chatId);
+}
+
+function createChat(userId, title) {
   const now = Date.now();
   const chat = {
     id: 'chat-' + now.toString(36) + '-' + Math.random().toString(36).slice(2, 8),
@@ -226,14 +252,15 @@ function createChat(title) {
     messages: [],
   };
   const store = loadChatsStore();
-  store.chats.unshift(chat);
+  ensureUserBucket(store, userId);
+  store.users[userId].chats.unshift(chat);
   saveChatsStore(store);
   return chat;
 }
 
-function appendMessage(chatId, role, content, extra) {
+function appendMessage(userId, chatId, role, content, extra) {
   const store = loadChatsStore();
-  const chat = store.chats.find((c) => c.id === chatId);
+  const chat = findChat(store, userId, chatId);
   if (!chat) return null;
   chat.messages.push({
     role,
@@ -282,7 +309,7 @@ const server = http.createServer(async (req, res) => {
   // CORS für Ingress
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.writeHead(204);
     res.end();
@@ -303,8 +330,10 @@ const server = http.createServer(async (req, res) => {
 
   // Chats: Liste
   if (pathname === '/api/chats' && req.method === 'GET') {
+    const userId = getHaUserId(req);
     const store = loadChatsStore();
-    const chats = store.chats
+    ensureUserBucket(store, userId);
+    const chats = store.users[userId].chats
       .slice()
       .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))
       .map((c) => ({
@@ -321,10 +350,11 @@ const server = http.createServer(async (req, res) => {
 
   // Chats: Neu
   if (pathname === '/api/chats' && req.method === 'POST') {
+    const userId = getHaUserId(req);
     const body = await collectBody(req);
     let data = {};
     try { data = JSON.parse(body || '{}'); } catch (_) {}
-    const chat = createChat(data.title);
+    const chat = createChat(userId, data.title);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ chat }));
     return;
@@ -332,9 +362,10 @@ const server = http.createServer(async (req, res) => {
 
   // Chats: Details
   if (pathname.startsWith('/api/chats/') && req.method === 'GET') {
+    const userId = getHaUserId(req);
     const chatId = decodeURIComponent(pathname.slice('/api/chats/'.length));
     const store = loadChatsStore();
-    const chat = store.chats.find((c) => c.id === chatId);
+    const chat = findChat(store, userId, chatId);
     if (!chat) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Chat nicht gefunden' }));
@@ -347,11 +378,13 @@ const server = http.createServer(async (req, res) => {
 
   // Chats: Löschen
   if (pathname.startsWith('/api/chats/') && req.method === 'DELETE') {
+    const userId = getHaUserId(req);
     const chatId = decodeURIComponent(pathname.slice('/api/chats/'.length));
     const store = loadChatsStore();
-    const before = store.chats.length;
-    store.chats = store.chats.filter((c) => c.id !== chatId);
-    if (store.chats.length === before) {
+    ensureUserBucket(store, userId);
+    const before = store.users[userId].chats.length;
+    store.users[userId].chats = store.users[userId].chats.filter((c) => c.id !== chatId);
+    if (store.users[userId].chats.length === before) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Chat nicht gefunden' }));
       return;
@@ -392,6 +425,7 @@ const server = http.createServer(async (req, res) => {
 
   // Proxy: Chat
   if (pathname === '/api/chat' && req.method === 'POST') {
+    const userId = getHaUserId(req);
     const inferenceUrl = getInferenceUrl();
     if (!inferenceUrl) {
       console.log('[HA Chat] chat: Webhook-URL fehlt (options.json oder N8N_INFERENCE_WEBHOOK_URL prüfen)');
@@ -416,16 +450,16 @@ const server = http.createServer(async (req, res) => {
     }
     let chatId = data.chat_id ? String(data.chat_id) : '';
     if (!chatId) {
-      const chat = createChat();
+      const chat = createChat(userId);
       chatId = chat.id;
     }
     const sessionId = chatId || (data.session_id ? String(data.session_id) : '');
-    appendMessage(chatId, 'user', message);
+    appendMessage(userId, chatId, 'user', message);
     const payload = { message, session_id: sessionId };
     try {
       const n8n = await callN8n(inferenceUrl, payload, 'chat');
       const answer = n8n.data && typeof n8n.data.answer === 'string' ? n8n.data.answer : '';
-      appendMessage(chatId, 'assistant', answer, {
+      appendMessage(userId, chatId, 'assistant', answer, {
         sources: n8n.data && n8n.data.sources,
         actions: n8n.data && n8n.data.actions,
       });
@@ -538,6 +572,7 @@ const server = http.createServer(async (req, res) => {
 
   // Proxy: Aktion (gleicher Webhook, Nachricht = Utterance)
   if (pathname === '/api/execute_action' && req.method === 'POST') {
+    const userId = getHaUserId(req);
     const inferenceUrl = getInferenceUrl();
     if (!inferenceUrl) {
       console.log('[HA Chat] execute_action: Webhook-URL fehlt');
@@ -557,16 +592,16 @@ const server = http.createServer(async (req, res) => {
     const utterance = (data.utterance || '').trim();
     let chatId = data.chat_id ? String(data.chat_id) : '';
     if (!chatId) {
-      const chat = createChat();
+      const chat = createChat(userId);
       chatId = chat.id;
     }
     const sessionId = chatId || (data.session_id ? String(data.session_id) : '');
-    appendMessage(chatId, 'user', utterance);
+    appendMessage(userId, chatId, 'user', utterance);
     const actionPayload = { message: utterance, session_id: sessionId };
     try {
       const n8n = await callN8n(inferenceUrl, actionPayload, 'action');
       const answer = n8n.data && (n8n.data.answer != null ? n8n.data.answer : n8n.data.response);
-      appendMessage(chatId, 'assistant', answer || '', {
+      appendMessage(userId, chatId, 'assistant', answer || '', {
         sources: n8n.data && n8n.data.sources,
         actions: n8n.data && n8n.data.actions,
       });

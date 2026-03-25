@@ -35,7 +35,7 @@
       /* ── Nachrichten-Spalte: gleiche Breite wie Input ── */
       .msg-col { width: min(100%, 620px); margin: 0 auto; display: flex; flex-direction: column; align-items: flex-start; padding: 4px 0 8px; min-height: 100%; }
       .empty-state { width: 100%; flex: 1; min-height: 100%; margin: 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-      .empty-state img { width: 140px; height: 140px; opacity: 0.62; filter: grayscale(1) brightness(0.33) contrast(0.9); }
+      .empty-state img { width: 220px; height: 220px; opacity: 0.62; filter: grayscale(1) brightness(0.33) contrast(0.9); }
       .msg { margin: 6px 0; padding: 11px 15px; border-radius: 18px; max-width: 92%; width: fit-content; line-height: 1.55; font-size: 0.97rem; }
       .msg.user { background: #009AC7; color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
       .msg.assistant { background: #2d2d2d; border: 1px solid #3a3a3a; border-bottom-left-radius: 4px; }
