@@ -40,7 +40,8 @@
 - [x] README_HACS: Popup-Verhalten (immer neuer Chat, keine Auswahl/Löschen) dokumentiert
 - [x] FAB-Popup UI: Header ohne Border, Composer ohne obere Border
 - [x] FAB-Popup UX: Klick außerhalb schließt Popup (mousedown/touchstart)
-- [x] FAB-Popup: Outside-Click-Erkennung per `composedPath()` (Shadow-DOM / HA-UI)
+- [x] FAB-Popup: Outside-Close über Vollflächen-Backdrop unter dem Popup (ersetzt document-Listener; zuverlässig bei HA Shadow-DOM)
+- [x] FAB: `title`, `welcome_title`, `welcome_subtitle` per Lovelace-YAML; README_HACS ergänzt
 - [x] FAB-Popup Empty-State: Willkommens-Screen + Suggestion-Chips wie in der App (bei leerem Chat)
 
 ## Nachfolgende Schritte

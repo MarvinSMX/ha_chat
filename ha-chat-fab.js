@@ -10,10 +10,13 @@
  *   addon_slug: "2954ddb4_ha_chat"
  *   ingress_api_base: optional fest "/api/hassio_ingress/…" (wenn Lookup nicht geht)
  *   icon, zIndex
+ *   title: Popup-Header + FAB-Tooltip (Standard: HA Chat)
+ *   welcome_title, welcome_subtitle: Empty-State (optional)
  */
 
 (() => {
   const OVERLAY_CLASS = 'ha-chat-fab-overlay';
+  const BACKDROP_CLASS = 'ha-chat-fab-backdrop';
   const STYLE_ID = 'ha-chat-fab-styles';
   const POPUP_CLASS = 'ha-chat-fab-popup';
   const PROMPT_SUGGESTIONS = [
@@ -160,6 +163,16 @@
       .${OVERLAY_CLASS} ha-icon{color:inherit}
       .${OVERLAY_CLASS} svg{width:22px;height:22px;display:block}
 
+      .${BACKDROP_CLASS}{
+        position:fixed;
+        inset:0;
+        display:none;
+        background:transparent;
+        pointer-events:auto;
+        -webkit-tap-highlight-color:transparent;
+      }
+      .${BACKDROP_CLASS}[data-open="true"]{display:block;}
+
       .${POPUP_CLASS}{
         position:fixed;
         right:calc(var(--ha-space-4, 16px) + var(--safe-area-inset-right, 0px));
@@ -247,7 +260,7 @@
   function cleanupLegacyOverlays() {
     const root = getOverlayRoot();
     if (!root || !root.querySelectorAll) return;
-    const legacy = root.querySelectorAll(`.${OVERLAY_CLASS}:not([data-owner="ha-chat-fab"]), .${POPUP_CLASS}:not([data-owner="ha-chat-fab"])`);
+    const legacy = root.querySelectorAll(`.${OVERLAY_CLASS}:not([data-owner="ha-chat-fab"]), .${BACKDROP_CLASS}:not([data-owner="ha-chat-fab"]), .${POPUP_CLASS}:not([data-owner="ha-chat-fab"])`);
     legacy.forEach((el) => {
       try { el.remove(); } catch (_) {}
     });
@@ -300,15 +313,6 @@
       this._chatId = null;
       this._thread = [];
       this._boundThreadClick = null;
-      this._boundOutsidePointer = (e) => {
-        if (!this._open || !this._popupEl) return;
-        const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
-        const t = e.target;
-        const inPath = (el) => !!el && path.indexOf(el) !== -1;
-        const insidePopup = inPath(this._popupEl) || (t && t.nodeType === 1 && this._popupEl.contains(t));
-        const insideFab = this._overlayEl && (inPath(this._overlayEl) || (t && t.nodeType === 1 && this._overlayEl.contains(t)));
-        if (!insidePopup && !insideFab) this._setOpen(false);
-      };
       this.shadowRoot.innerHTML = `<style>:host{display:block;width:0;height:0;overflow:hidden;}</style>`;
     }
 
@@ -316,11 +320,47 @@
       return {
         addon_slug: '2954ddb4_ha_chat',
         icon: 'mdi:chat',
+        title: 'HA Chat',
       };
     }
 
     getCardSize() {
       return 0;
+    }
+
+    _fabTitle() {
+      const c = this._config || {};
+      const t = typeof c.title === 'string' ? c.title.trim() : '';
+      return t || 'HA Chat';
+    }
+
+    _welcomeTitle() {
+      const c = this._config || {};
+      const w = typeof c.welcome_title === 'string' ? c.welcome_title.trim() : '';
+      if (w) return w;
+      return 'Willkommen im ' + this._fabTitle();
+    }
+
+    _welcomeSubtitle() {
+      const c = this._config || {};
+      const w = typeof c.welcome_subtitle === 'string' ? c.welcome_subtitle.trim() : '';
+      if (w) return w;
+      return 'Starte mit einem Vorschlag oder schreibe eine eigene Nachricht.';
+    }
+
+    _applyPopupLabels() {
+      const name = this._fabTitle();
+      if (this._popupEl) {
+        const el = this._popupEl.querySelector('#fab-popup-title');
+        if (el) el.textContent = name;
+      }
+      if (this._overlayEl) {
+        const btn = this._overlayEl.querySelector('button');
+        if (btn) {
+          btn.setAttribute('aria-label', name + ' öffnen');
+          btn.title = name;
+        }
+      }
     }
 
     _addonSlug() {
@@ -347,7 +387,11 @@
       this._resolvePromise = null;
       if (this._popupEl) {
         this._unmountPopup();
-        if (this._open) this._mountPopup();
+        if (this._open) {
+          this._mountPopup();
+          this._syncBackdrop();
+          this._applyLayerZIndex();
+        }
       }
       this._updateOverlay();
     }
@@ -361,10 +405,9 @@
     }
 
     disconnectedCallback() {
-      document.removeEventListener('mousedown', this._boundOutsidePointer, true);
-      document.removeEventListener('touchstart', this._boundOutsidePointer, true);
       this._unmountOverlay();
       this._unmountPopup();
+      this._unmountBackdrop();
     }
 
     _apiUrl(path) {
@@ -446,8 +489,6 @@
 
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.setAttribute('aria-label', 'HA Chat öffnen');
-      btn.title = 'HA Chat';
 
       const iconName = (this._config && typeof this._config.icon === 'string' && this._config.icon.trim())
         ? this._config.icon.trim()
@@ -463,11 +504,57 @@
       host.appendChild(btn);
       root.appendChild(host);
       this._overlayEl = host;
+      this._applyPopupLabels();
+    }
+
+    _mountBackdrop() {
+      if (this._backdropEl) return;
+      const root = getOverlayRoot();
+      const bd = document.createElement('div');
+      bd.className = BACKDROP_CLASS;
+      bd.setAttribute('data-owner', 'ha-chat-fab');
+      bd.setAttribute('data-instance', this._instanceId);
+      bd.setAttribute('data-open', 'false');
+      bd.setAttribute('aria-hidden', 'true');
+      bd.tabIndex = -1;
+      bd.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this._setOpen(false);
+      });
+      root.appendChild(bd);
+      this._backdropEl = bd;
+    }
+
+    _syncBackdrop() {
+      if (!this._backdropEl) return;
+      if (this._open) {
+        this._backdropEl.setAttribute('data-open', 'true');
+        this._backdropEl.style.display = 'block';
+      } else {
+        this._backdropEl.setAttribute('data-open', 'false');
+        this._backdropEl.style.display = 'none';
+      }
+    }
+
+    _unmountBackdrop() {
+      if (this._backdropEl && this._backdropEl.parentNode) {
+        this._backdropEl.parentNode.removeChild(this._backdropEl);
+      }
+      this._backdropEl = null;
+    }
+
+    _applyLayerZIndex() {
+      const z = (this._config && typeof this._config.zIndex === 'number') ? this._config.zIndex : 100000;
+      if (this._overlayEl) this._overlayEl.style.zIndex = String(z);
+      if (this._backdropEl) this._backdropEl.style.zIndex = String(z - 1);
+      if (this._popupEl) this._popupEl.style.zIndex = String(z);
     }
 
     _mountPopup() {
       if (this._popupEl) return;
       const root = getOverlayRoot();
+      this._mountBackdrop();
       const pop = document.createElement('div');
       pop.className = POPUP_CLASS;
       pop.setAttribute('data-instance', this._instanceId);
@@ -476,7 +563,7 @@
 
       pop.innerHTML = `
         <div class="head">
-          <div class="title">HA Chat</div>
+          <div class="title" id="fab-popup-title"></div>
           <button class="btn" type="button" aria-label="Schließen" title="Schließen">
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"></path></svg>
           </button>
@@ -519,9 +606,14 @@
 
       root.appendChild(pop);
       this._popupEl = pop;
+      this._applyPopupLabels();
     }
 
     _unmountPopup() {
+      if (this._backdropEl) {
+        this._backdropEl.setAttribute('data-open', 'false');
+        this._backdropEl.style.display = 'none';
+      }
       if (this._popupEl && this._popupEl.parentNode) {
         if (this._boundThreadClick) {
           const th = this._popupEl.querySelector('#fab-thread');
@@ -543,10 +635,11 @@
       if (!this._popupEl) return;
       this._popupEl.setAttribute('data-open', this._open ? 'true' : 'false');
       if (this._overlayEl) this._overlayEl.style.display = this._open ? 'none' : 'flex';
+      this._mountBackdrop();
+      this._syncBackdrop();
+      this._applyLayerZIndex();
 
       if (this._open) {
-        document.addEventListener('mousedown', this._boundOutsidePointer, true);
-        document.addEventListener('touchstart', this._boundOutsidePointer, true);
         const self = this;
         this._showStatus('Verbinde …', false);
         this._ensureApiBase()
@@ -561,9 +654,6 @@
             self._showStatus((e && e.message) || String(e), true);
             self._renderThread();
           });
-      } else {
-        document.removeEventListener('mousedown', this._boundOutsidePointer, true);
-        document.removeEventListener('touchstart', this._boundOutsidePointer, true);
       }
     }
 
@@ -614,8 +704,8 @@
           .join('');
         col.innerHTML = ''
           + '<div class="empty-state">'
-          + '<div class="empty-welcome">Willkommen im HA Chat</div>'
-          + '<div class="empty-sub">Starte mit einem Vorschlag oder schreibe eine eigene Nachricht.</div>'
+          + '<div class="empty-welcome">' + escapeHtml(this._welcomeTitle()) + '</div>'
+          + '<div class="empty-sub">' + escapeHtml(this._welcomeSubtitle()) + '</div>'
           + '<div class="prompt-suggestions">' + suggestions + '</div>'
           + '</div>';
         col.querySelectorAll('button[data-suggestion]').forEach((btn) => {
@@ -765,9 +855,9 @@
     }
 
     _updateOverlay() {
+      this._applyLayerZIndex();
+      this._applyPopupLabels();
       if (!this._overlayEl) return;
-      const z = (this._config && typeof this._config.zIndex === 'number') ? this._config.zIndex : 100000;
-      this._overlayEl.style.zIndex = String(z);
 
       const iconName = (this._config && typeof this._config.icon === 'string' && this._config.icon.trim())
         ? this._config.icon.trim()

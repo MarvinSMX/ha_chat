@@ -46,6 +46,21 @@ icon: mdi:chat
 
 Hinweis: Der Token kann sich ändern – dann Lookup wieder aktiv lassen oder Prefix aktualisieren.
 
+### Texte (Header, FAB, Willkommen)
+
+- `title` – Name im **Popup-Header** und als **Tooltip** / `aria-label` am FAB (Standard: `HA Chat`).
+- `welcome_title` – Überschrift im **Empty-State** (optional). Wenn nicht gesetzt: `Willkommen im <title>`.
+- `welcome_subtitle` – Zeile darunter (optional). Wenn nicht gesetzt: der bisherige Hinweis zu Vorschlägen.
+
+```yaml
+type: custom:ha-chat-fab
+addon_slug: 2954ddb4_ha_chat
+title: Support-Bot
+welcome_title: Willkommen beim Support
+welcome_subtitle: Frag mich zu Geräten, Szenen oder der Dokumentation.
+icon: mdi:chat
+```
+
 ### Weitere Optionen
 
 - `slug` – Alias für `addon_slug` (Abwärtskompatibilität)
