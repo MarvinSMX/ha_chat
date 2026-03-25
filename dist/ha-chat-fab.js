@@ -165,11 +165,6 @@
     return data;
   }
 
-  function setIngressCookie(session) {
-    if (!session) return;
-    document.cookie = `ingress_session=${session};path=/api/hassio_ingress/;SameSite=Strict${location.protocol === "https:" ? ";Secure" : ""}`;
-  }
-
   class HaChatFabCard extends HTMLElement {
     constructor() {
       super();
@@ -309,30 +304,23 @@
 
     async _resolveApiBase() {
       if (this._resolvedApiBase) return this._resolvedApiBase;
-      const slug = (this._config && typeof this._config.slug === 'string' && this._config.slug.trim())
-        ? this._config.slug.trim()
-        : 'ha_chat';
-
-      try {
-        const s = await fetchJson('/api/hassio/ingress/session', { method: 'POST' });
-        const session = (s && s.data && s.data.session) ? s.data.session : (s && s.session);
-        if (session) setIngressCookie(session);
-      } catch (_) {}
-
-      try {
-        const info = await fetchJson('/api/hassio/addons/' + encodeURIComponent(slug) + '/info');
-        const data = info && info.data ? info.data : info;
-        const ingressUrl = data && typeof data.ingress_url === 'string' ? data.ingress_url : '';
-        if (ingressUrl && ingressUrl.startsWith('/')) {
-          this._resolvedApiBase = ingressUrl.replace(/\/$/, '');
-          return this._resolvedApiBase;
-        }
-      } catch (_) {}
-
-      const href = (this._config && typeof this._config.href === 'string' && this._config.href.trim())
+      const cfgHref = (this._config && typeof this._config.href === 'string' && this._config.href.trim())
         ? this._config.href.trim().replace(/\/$/, '')
-        : '/hassio/ingress/ha_chat';
-      this._resolvedApiBase = href;
+        : '';
+      const candidates = [];
+      if (cfgHref) candidates.push(cfgHref);
+      candidates.push('/hassio/ingress/ha_chat');
+
+      for (let i = 0; i < candidates.length; i++) {
+        const base = candidates[i];
+        try {
+          await fetchJson(joinUrl(base, '/api/chats'));
+          this._resolvedApiBase = base;
+          return this._resolvedApiBase;
+        } catch (_) {}
+      }
+
+      this._resolvedApiBase = cfgHref || '/hassio/ingress/ha_chat';
       return this._resolvedApiBase;
     }
 
