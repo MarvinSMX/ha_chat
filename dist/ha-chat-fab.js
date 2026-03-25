@@ -15,7 +15,9 @@
 
   function ensureStyles(root) {
     const r = root || document.head || document.documentElement;
-    if (!r || r.getElementById && r.getElementById(STYLE_ID)) return;
+    if (!r) return;
+    const exists = r.querySelector ? r.querySelector('#' + STYLE_ID) : null;
+    if (exists) return;
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
