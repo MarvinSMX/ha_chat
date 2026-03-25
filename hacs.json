@@ -1,6 +1,6 @@
 {
   "name": "HA Chat FAB",
-  "content_in_root": false,
+  "content_in_root": true,
   "render_readme": true,
   "filename": "ha-chat-fab.js"
 }

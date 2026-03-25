@@ -6,7 +6,7 @@ Dieses Repo enthält zusätzlich eine HACS-Frontend-Resource als **Lovelace Cust
 
 - In HACS: **Frontend** → **Custom repositories** → dieses Git-Repo hinzufügen (Kategorie **Frontend**).
 - Resource hinzufügen: **Einstellungen → Dashboards → Ressourcen**
-  - URL: `/hacsfiles/ha-chat-fab/ha-chat-fab.js`
+  - URL: `/hacsfiles/<dein-repo-name>/ha-chat-fab.js`
   - Typ: `JavaScript Module`
 
 ### Nutzung (pro Dashboard/View)

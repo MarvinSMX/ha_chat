@@ -19,6 +19,7 @@
 - [x] Sidebar default ausgeblendet (Expand-Button sichtbar)
 - [x] HACS Frontend Resource: Dashboard Overlay Chat-FAB (unten rechts)
 - [x] HACS: FAB als Lovelace platzierbare Custom Card (pro Dashboard/View)
+- [x] HACS Fix: `ha-chat-fab.js` im Repo-Root + `content_in_root: true`
 - [x] Bestehende Frontend- und Backend-Chatlogik analysiert (`ha_chat/www/ha-chat-panel.js`, `ha_chat/server.js`)
 - [x] Empty-State mit zentriertem `logo.svg` im Chatbereich umgesetzt
 - [x] Rechte Sidebar mit Chatliste und Button `+ Neuer Chat` in der UI ergänzt
