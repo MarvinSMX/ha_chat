@@ -49,6 +49,8 @@
 
 - [x] FAB-API-Calls senden jetzt ebenfalls User-Authorization: Bearer (nicht nur Ingress-Lookup)
 
+- [x] FAB: optionales `ha_bearer_token` / `bearer_token` / `ha_token` in YAML (Priorität vor Session-Token; wie curl); README-Hinweis Sicherheit
+
 ## Nachfolgende Schritte
 
 - [ ] Optional: Verbesserte mobile Darstellung der rechten Sidebar (Overlay/Collapse)

@@ -35,6 +35,22 @@ Die Card ist unsichtbar und aktiviert nur den FAB. Beim Klick öffnet sich ein *
 
 Im Popup gibt es bewusst **keine Chat-Auswahl** und **keine Löschfunktion**. Bei jedem Öffnen wird automatisch ein **neuer Chat** gestartet.
 
+### Optional: Bearer-Token in der YAML (wie `curl`)
+
+Wenn der Lookup `GET /api/hassio_addon_ingress_path/<slug>` im Browser für manche Benutzer `401` liefert, kannst du – **analog zu `curl -H "Authorization: Bearer …"`** – einen Token in der Card setzen:
+
+```yaml
+type: custom:ha-chat-fab
+addon_slug: 2954ddb4_ha_chat
+ha_bearer_token: DEIN_LONG_LIVED_ACCESS_TOKEN
+```
+
+- Gültige Schlüssel (Alias): `ha_bearer_token`, `bearer_token`, `ha_token`
+- Optional mit Präfix: `Bearer eyJ…` oder nur `eyJ…`
+- Wenn gesetzt, hat dieser Wert **Vorrang** vor dem automatisch ermittelten Session-Token und wird für **Ingress-Lookup und alle Add-on-API-Aufrufe** dieser Card genutzt.
+
+**Sicherheit:** Der Token steht im Klartext in der Lovelace-Konfiguration. Jeder mit Zugriff auf Dashboard-Bearbeitung oder Backups kann ihn lesen. Besser: Integration/HA so konfigurieren, dass Non-Admins den Lookup ohne festen Token nutzen dürfen.
+
 ### Optional: Prefix manuell setzen
 
 Falls der Lookup-Endpoint aus dem Browser nicht erreichbar ist (Rechte), kannst du den von der Integration gelieferten Prefix fest eintragen (wie mit `curl` + Long-Lived Token ermittelt):

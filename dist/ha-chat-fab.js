@@ -12,6 +12,7 @@
  *   icon, zIndex
  *   title: Popup-Header + FAB-Tooltip (Standard: HA Chat)
  *   welcome_title, welcome_subtitle: Empty-State (optional)
+ *   ha_bearer_token: optional Long-Lived Token (wie curl -H "Authorization: Bearer …")
  */
 
 (() => {
@@ -347,6 +348,30 @@
       return '';
     }
 
+    _normalizeBearerValue(raw) {
+      let t = String(raw == null ? '' : raw).trim();
+      if (!t) return '';
+      if (/^bearer\s+/i.test(t)) t = t.replace(/^bearer\s+/i, '').trim();
+      return t;
+    }
+
+    _yamlBearerToken() {
+      const c = this._config || {};
+      const keys = ['ha_bearer_token', 'bearer_token', 'ha_token'];
+      for (let i = 0; i < keys.length; i++) {
+        const v = c[keys[i]];
+        const n = this._normalizeBearerValue(v);
+        if (n) return n;
+      }
+      return '';
+    }
+
+    _authBearer() {
+      const fromYaml = this._yamlBearerToken();
+      if (fromYaml) return fromYaml;
+      return this._haAccessToken();
+    }
+
     _fabTitle() {
       const c = this._config || {};
       const t = typeof c.title === 'string' ? c.title.trim() : '';
@@ -437,7 +462,7 @@
     _fetchIngressPath() {
       const slug = this._addonSlug();
       const url = '/api/hassio_addon_ingress_path/' + encodeURIComponent(slug);
-      const token = this._haAccessToken();
+      const token = this._authBearer();
       const headers = token ? { Authorization: 'Bearer ' + token } : undefined;
       return fetch(url, { ...fetchOpts, headers }).then((r) => {
         if (!r.ok) {
@@ -484,7 +509,7 @@
     _fetchApi(path, init, canRetry) {
       const self = this;
       const mayRetry = canRetry !== false;
-      const token = this._haAccessToken();
+      const token = this._authBearer();
       const addAuth = (opts) => {
         const o = { ...(opts || {}) };
         const h = { ...(o.headers || {}) };
