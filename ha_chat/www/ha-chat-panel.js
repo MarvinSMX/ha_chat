@@ -443,8 +443,9 @@
       fetch(apiBase() + '/api/me')
         .then(function (r) { return r.json().catch(function () { return {}; }); })
         .then(function (d) {
-          var userId = (d && d.user_id) ? String(d.user_id) : '';
-          var label = userId && userId !== 'public' ? userId : 'Gast';
+          var me = d && d.me ? d.me : {};
+          var label = (me && (me.display_name || me.name || me.id)) ? String(me.display_name || me.name || me.id) : '';
+          if (!label || label === 'public') label = 'Gast';
           var el = self.shadowRoot.getElementById('sidebar-user');
           if (el) el.textContent = label;
         })

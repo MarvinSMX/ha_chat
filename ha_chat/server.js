@@ -206,6 +206,7 @@ function collectBody(req) {
 function getHaUserId(req) {
   const h = (req && req.headers) || {};
   const raw =
+    h['x-remote-user-id'] ||
     h['x-hass-user-id'] ||
     h['x-homeassistant-user-id'] ||
     h['x-ha-user-id'] ||
@@ -213,6 +214,14 @@ function getHaUserId(req) {
     '';
   const userId = String(raw || '').trim();
   return userId || 'public';
+}
+
+function getHaUserInfo(req) {
+  const h = (req && req.headers) || {};
+  const id = String(h['x-remote-user-id'] || '').trim() || getHaUserId(req);
+  const name = String(h['x-remote-user-name'] || '').trim();
+  const displayName = String(h['x-remote-user-display-name'] || '').trim();
+  return { id: id || 'public', name, display_name: displayName };
 }
 
 function loadChatsStore() {
@@ -313,6 +322,17 @@ const server = http.createServer(async (req, res) => {
       if (parts.length <= 4) return '/';
       return '/' + parts.slice(4).join('/');
     }
+    // Older/alternate ingress prefixes
+    if (p.startsWith('/api/ingress/')) {
+      const parts = p.split('/');
+      if (parts.length <= 4) return '/';
+      return '/' + parts.slice(4).join('/');
+    }
+    if (p.startsWith('/api/supervisor_ingress/')) {
+      const parts = p.split('/');
+      if (parts.length <= 4) return '/';
+      return '/' + parts.slice(4).join('/');
+    }
     return p;
   }
   const pathname = (normalizeIngressPath(rawPathname) || '/').replace(/\/$/, '') || '/';
@@ -341,10 +361,13 @@ const server = http.createServer(async (req, res) => {
 
   // Aktueller HA User (Ingress Header)
   if (pathname === '/api/me' && req.method === 'GET') {
-    const userId = getHaUserId(req);
+    const me = getHaUserInfo(req);
     const debug = parsed.query && String(parsed.query.debug || '').trim() === '1';
     const h = (req && req.headers) || {};
     const ingressHeaders = debug ? {
+      'x-remote-user-id': h['x-remote-user-id'],
+      'x-remote-user-name': h['x-remote-user-name'],
+      'x-remote-user-display-name': h['x-remote-user-display-name'],
       'x-hass-user-id': h['x-hass-user-id'],
       'x-homeassistant-user-id': h['x-homeassistant-user-id'],
       'x-ha-user-id': h['x-ha-user-id'],
@@ -356,7 +379,7 @@ const server = http.createServer(async (req, res) => {
       host: h['host'],
     } : undefined;
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(debug ? { user_id: userId, headers: ingressHeaders } : { user_id: userId }));
+    res.end(JSON.stringify(debug ? { me, headers: ingressHeaders } : { me }));
     return;
   }
 
