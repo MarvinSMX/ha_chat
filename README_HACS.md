@@ -17,6 +17,7 @@ Füge in dem gewünschten Dashboard/View eine **Manuelle Karte** hinzu:
 type: custom:ha-chat-fab
 href: /app/2954ddb4_ha_chat
 slug: 2954ddb4_ha_chat
+api_base: /hassio/ingress/ha_chat
 icon: mdi:chat
 ```
 
