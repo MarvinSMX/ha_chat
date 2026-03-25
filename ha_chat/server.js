@@ -345,6 +345,23 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Chats: Löschen
+  if (pathname.startsWith('/api/chats/') && req.method === 'DELETE') {
+    const chatId = decodeURIComponent(pathname.slice('/api/chats/'.length));
+    const store = loadChatsStore();
+    const before = store.chats.length;
+    store.chats = store.chats.filter((c) => c.id !== chatId);
+    if (store.chats.length === before) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Chat nicht gefunden' }));
+      return;
+    }
+    saveChatsStore(store);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, chat_id: chatId }));
+    return;
+  }
+
   // Manueller Doku-Sync
   if (pathname === '/api/sync' && req.method === 'POST') {
     const opts = getOptions();

@@ -131,13 +131,17 @@
       .new-chat-item:hover { background: var(--ha-color-fill-primary-quiet-hover, rgba(0, 154, 199, 0.16)); }
       .sidebar[aria-expanded="false"] .new-chat-item { padding: 10px 0; text-align: center; }
       .sidebar[aria-expanded="false"] .new-chat-item span { display: none; }
+      .chat-row { display: flex; align-items: center; gap: 6px; }
       .chat-item { width: 100%; text-align: left; border: none; border-radius: var(--ha-border-radius-md, 8px); background: transparent; color: var(--sidebar-text-color, var(--primary-text-color, #e1e1e1)); padding: 10px 10px; cursor: pointer; font-family: inherit; position: relative; }
       .chat-item:hover { background: rgba(255,255,255,0.06); }
       .chat-item.active { background: rgba(var(--rgb-primary-color, 0,154,199), 0.18); }
+      .chat-delete-btn { width: 30px; height: 30px; border: none; border-radius: 8px; background: transparent; color: var(--secondary-text-color, #9b9b9b); cursor: pointer; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
+      .chat-delete-btn:hover { background: rgba(255,255,255,0.08); color: #ff8a80; }
+      .chat-delete-btn svg { width: 16px; height: 16px; }
+      .sidebar[aria-expanded="false"] .chat-row { justify-content: center; }
       .sidebar[aria-expanded="false"] .chat-item-title,
-      .sidebar[aria-expanded="false"] .chat-item-meta { display: none; }
+      .sidebar[aria-expanded="false"] .chat-delete-btn { display: none; }
       .chat-item-title { font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .chat-item-meta { margin-top: 3px; font-size: 0.75rem; color: #888; }
 
       .sidebar-expand-btn { position: absolute; top: 12px; right: 12px; width: 40px; height: 40px; border: 1px solid var(--divider-color, rgba(255,255,255,0.12)); background: var(--card-background-color, rgba(20,20,20,0.6)); color: var(--primary-text-color, #e1e1e1); border-radius: 9999px; cursor: pointer; display: none; align-items: center; justify-content: center; backdrop-filter: blur(6px); }
       .sidebar-expand-btn:hover { background: rgba(255,255,255,0.08); }
@@ -437,14 +441,47 @@
       listEl.appendChild(newBtn);
 
       this._chats.forEach(function (chat) {
+        var row = document.createElement('div');
+        row.className = 'chat-row';
+
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'chat-item' + (chat.id === self._chatId ? ' active' : '');
-        btn.innerHTML = '<div class="chat-item-title">' + escapeHtml(chat.title || 'Neuer Chat') + '</div>'
-          + '<div class="chat-item-meta">' + (chat.message_count || 0) + ' Nachrichten · ' + self._shortDate(chat.updated_at) + '</div>';
+        btn.innerHTML = '<div class="chat-item-title">' + escapeHtml(chat.title || 'Neuer Chat') + '</div>';
         btn.addEventListener('click', function () { self._selectChat(chat.id); });
-        listEl.appendChild(btn);
+
+        var del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'chat-delete-btn';
+        del.title = 'Chat löschen';
+        del.setAttribute('aria-label', 'Chat löschen');
+        del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z"></path></svg>';
+        del.addEventListener('click', function (e) {
+          e.stopPropagation();
+          self._deleteChat(chat.id);
+        });
+
+        row.appendChild(btn);
+        row.appendChild(del);
+        listEl.appendChild(row);
       });
+    }
+
+    _deleteChat(chatId) {
+      var self = this;
+      if (!chatId) return;
+      fetch(apiBase() + '/api/chats/' + encodeURIComponent(chatId), { method: 'DELETE' })
+        .then(function (r) { return parseJsonResponse(r); })
+        .then(function () {
+          if (self._chatId === chatId) {
+            self._chatId = null;
+            self._thread = [];
+          }
+          self._loadChats();
+        })
+        .catch(function (e) {
+          self._showError('Chat konnte nicht gelöscht werden: ' + (e.message || e));
+        });
     }
 
     _loadChats() {

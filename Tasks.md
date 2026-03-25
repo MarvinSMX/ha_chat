@@ -10,6 +10,8 @@
 - [x] Sidebar Collapse: Sidebar komplett ausblenden, Expand-Button außerhalb
 - [x] Empty-State: HA Logo zentriert (h/v) ohne Text
 - [x] Sidebar-Headerhöhe auf HA-Originalmaß (56px) angepasst
+- [x] Chat-Sidebar: unnötige Meta-Infos entfernt (Nachrichten/Datum)
+- [x] Chat-Löschen ergänzt (Frontend + Backend DELETE Endpoint)
 - [x] Bestehende Frontend- und Backend-Chatlogik analysiert (`ha_chat/www/ha-chat-panel.js`, `ha_chat/server.js`)
 - [x] Empty-State mit zentriertem `logo.svg` im Chatbereich umgesetzt
 - [x] Rechte Sidebar mit Chatliste und Button `+ Neuer Chat` in der UI ergänzt
