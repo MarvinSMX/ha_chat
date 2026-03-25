@@ -180,7 +180,6 @@
         align-items:center;
         justify-content:space-between;
         padding:0 8px 0 12px;
-        border-bottom:1px solid var(--divider-color, rgba(255,255,255,0.12));
         background:var(--sidebar-menu-button-background-color, rgba(0,0,0,0.08));
       }
       .${POPUP_CLASS} .title{font-weight:600;font-size:0.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -189,19 +188,6 @@
         color:var(--secondary-text-color, #9b9b9b);cursor:pointer;display:flex;align-items:center;justify-content:center;
       }
       .${POPUP_CLASS} .head .btn:hover{background:rgba(255,255,255,0.08);color:var(--primary-text-color,#fff);}
-      .${POPUP_CLASS} .toolbar{
-        flex-shrink:0;display:flex;align-items:center;gap:6px;padding:6px 8px;
-        border-bottom:1px solid var(--divider-color, rgba(255,255,255,0.08));
-      }
-      .${POPUP_CLASS} .toolbar select{
-        flex:1;min-width:0;padding:6px 8px;border-radius:8px;border:1px solid var(--divider-color, rgba(255,255,255,0.2));
-        background:var(--primary-background-color, #1c1c1c);color:inherit;font-size:0.85rem;
-      }
-      .${POPUP_CLASS} .toolbar .tb-btn{
-        width:36px;height:36px;border-radius:8px;border:1px solid var(--divider-color, rgba(255,255,255,0.2));
-        background:var(--primary-background-color, #2a2a2a);color:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;
-      }
-      .${POPUP_CLASS} .toolbar .tb-btn:hover{border-color:#009AC7;color:#009AC7;}
       .${POPUP_CLASS} .body{flex:1;min-height:0;display:flex;flex-direction:column;}
       .${POPUP_CLASS} .thread{flex:1;overflow-y:auto;min-height:0;padding:8px 10px;}
       .${POPUP_CLASS} .msg-col{display:flex;flex-direction:column;align-items:flex-start;gap:6px;max-width:620px;margin:0 auto;}
@@ -228,7 +214,7 @@
       .${POPUP_CLASS} .chat-img{display:block;max-width:100%;max-height:220px;border-radius:8px;object-fit:contain;opacity:0;transition:opacity .25s;}
       .${POPUP_CLASS} .img-wrapper.loaded .img-skeleton{display:none;}
       .${POPUP_CLASS} .img-wrapper.loaded .chat-img{opacity:1;}
-      .${POPUP_CLASS} .composer{flex-shrink:0;padding:8px 10px 10px;border-top:1px solid var(--divider-color, rgba(255,255,255,0.08));}
+      .${POPUP_CLASS} .composer{flex-shrink:0;padding:8px 10px 10px;}
       .${POPUP_CLASS} .input-wrap{display:flex;gap:8px;align-items:center;padding:6px 10px;background:#2d2d2d;border:1px solid #3a3a3a;border-radius:20px;}
       .${POPUP_CLASS} .input-wrap input{flex:1;min-width:0;border:none;background:transparent;color:inherit;font-size:0.9rem;outline:none;}
       .${POPUP_CLASS} .send-btn{width:38px;height:38px;border-radius:50%;border:none;background:#009AC7;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
@@ -300,9 +286,15 @@
       this._resolvePromise = null;
       this._sessionId = 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
       this._chatId = null;
-      this._chats = [];
       this._thread = [];
       this._boundThreadClick = null;
+      this._boundOutsidePointer = (e) => {
+        if (!this._open || !this._popupEl) return;
+        const t = e.target;
+        const insidePopup = this._popupEl.contains(t);
+        const insideFab = this._overlayEl && this._overlayEl.contains(t);
+        if (!insidePopup && !insideFab) this._setOpen(false);
+      };
       this.shadowRoot.innerHTML = `<style>:host{display:block;width:0;height:0;overflow:hidden;}</style>`;
     }
 
@@ -355,6 +347,8 @@
     }
 
     disconnectedCallback() {
+      document.removeEventListener('mousedown', this._boundOutsidePointer, true);
+      document.removeEventListener('touchstart', this._boundOutsidePointer, true);
       this._unmountOverlay();
       this._unmountPopup();
     }
@@ -473,13 +467,6 @@
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"></path></svg>
           </button>
         </div>
-        <div class="toolbar">
-          <select id="fab-chat-select" aria-label="Chat wählen"></select>
-          <button type="button" class="tb-btn" id="fab-new-chat" title="Neuer Chat" aria-label="Neuer Chat">+</button>
-          <button type="button" class="tb-btn" id="fab-del-chat" title="Chat löschen" aria-label="Chat löschen">
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6Z"/></svg>
-          </button>
-        </div>
         <div class="fab-status"></div>
         <div class="body">
           <div class="thread" id="fab-thread"><div class="msg-col" id="fab-msg-col"></div></div>
@@ -498,12 +485,6 @@
       `;
 
       pop.querySelector('.head .btn').addEventListener('click', () => this._setOpen(false));
-      pop.querySelector('#fab-new-chat').addEventListener('click', () => this._createNewChat(true));
-      pop.querySelector('#fab-del-chat').addEventListener('click', () => this._deleteCurrentChat());
-      pop.querySelector('#fab-chat-select').addEventListener('change', (e) => {
-        const id = e.target.value;
-        if (id) this._selectChat(id);
-      });
       pop.querySelector('#fab-send').addEventListener('click', () => this._send());
       pop.querySelector('#fab-input').addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -550,66 +531,31 @@
       if (this._overlayEl) this._overlayEl.style.display = this._open ? 'none' : 'flex';
 
       if (this._open) {
+        document.addEventListener('mousedown', this._boundOutsidePointer, true);
+        document.addEventListener('touchstart', this._boundOutsidePointer, true);
         const self = this;
         this._showStatus('Verbinde …', false);
         this._ensureApiBase()
           .then(() => {
             self._showStatus('', false);
             self._showError('');
-            return self._loadChats();
+            self._chatId = null;
+            self._thread = [];
+            return self._createNewChat(true);
           })
           .catch((e) => {
             self._showStatus((e && e.message) || String(e), true);
             self._renderThread();
           });
+      } else {
+        document.removeEventListener('mousedown', this._boundOutsidePointer, true);
+        document.removeEventListener('touchstart', this._boundOutsidePointer, true);
       }
-    }
-
-    _fillChatSelect() {
-      const sel = this._popupEl && this._popupEl.querySelector('#fab-chat-select');
-      if (!sel) return;
-      const cur = this._chatId;
-      sel.innerHTML = '';
-      this._chats.forEach((chat) => {
-        const opt = document.createElement('option');
-        opt.value = chat.id;
-        opt.textContent = chat.title || chat.id || 'Chat';
-        if (chat.id === cur) opt.selected = true;
-        sel.appendChild(opt);
-      });
-      if (this._chats.length === 0) {
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = '—';
-        sel.appendChild(opt);
-      }
-    }
-
-    _loadChats() {
-      const self = this;
-      return fetch(this._apiUrl('/api/chats'), fetchOpts)
-        .then((r) => parseJsonResponse(r))
-        .then((d) => {
-          self._chats = Array.isArray(d.chats) ? d.chats : [];
-          self._fillChatSelect();
-          if (!self._chatId) {
-            if (self._chats.length) self._selectChat(self._chats[0].id);
-            else self._createNewChat(false);
-          } else {
-            self._selectChat(self._chatId);
-          }
-        })
-        .catch((e) => {
-          self._showError('Chats: ' + (e.message || e));
-          self._chats = [];
-          self._fillChatSelect();
-          self._renderThread();
-        });
     }
 
     _createNewChat(focusInput) {
       const self = this;
-      fetch(this._apiUrl('/api/chats'), {
+      return fetch(this._apiUrl('/api/chats'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -623,7 +569,6 @@
           }
           self._chatId = d.chat.id;
           self._thread = [];
-          return self._loadChats();
         })
         .then(() => {
           self._renderThread();
@@ -634,45 +579,6 @@
         })
         .catch((e) => {
           self._showError('Neuer Chat: ' + (e.message || e));
-        });
-    }
-
-    _selectChat(chatId) {
-      if (!chatId) return;
-      const self = this;
-      fetch(this._apiUrl('/api/chats/' + encodeURIComponent(chatId)), fetchOpts)
-        .then((r) => parseJsonResponse(r))
-        .then((d) => {
-          const chat = d.chat || {};
-          self._chatId = chat.id || chatId;
-          self._thread = Array.isArray(chat.messages) ? chat.messages.map((m) => ({
-            role: m.role,
-            content: m.content || '',
-            sources: Array.isArray(m.sources) ? m.sources : [],
-            actions: Array.isArray(m.actions) ? m.actions : [],
-            pending: false,
-          })) : [];
-          self._fillChatSelect();
-          self._renderThread();
-        })
-        .catch((e) => {
-          self._showError('Chat laden: ' + (e.message || e));
-        });
-    }
-
-    _deleteCurrentChat() {
-      const id = this._chatId;
-      if (!id) return;
-      const self = this;
-      fetch(this._apiUrl('/api/chats/' + encodeURIComponent(id)), { method: 'DELETE', ...fetchOpts })
-        .then((r) => parseJsonResponse(r))
-        .then(() => {
-          self._chatId = null;
-          self._thread = [];
-          self._loadChats();
-        })
-        .catch((e) => {
-          self._showError('Löschen: ' + (e.message || e));
         });
     }
 
@@ -764,7 +670,6 @@
           } else {
             self._popPendingAssistant(d.answer || '', d.sources || [], d.actions || []);
             if (d.chat_id && d.chat_id !== self._chatId) self._chatId = d.chat_id;
-            self._loadChats();
           }
         })
         .catch((e) => {
@@ -813,7 +718,6 @@
             const ans = d.answer != null ? d.answer : (d.response != null ? d.response : '');
             self._popPendingAssistant(ans, d.sources || [], d.actions || []);
             if (d.chat_id && d.chat_id !== self._chatId) self._chatId = d.chat_id;
-            self._loadChats();
           }
         })
         .catch((e) => {

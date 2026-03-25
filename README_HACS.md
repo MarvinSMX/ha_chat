@@ -32,6 +32,8 @@ icon: mdi:chat
 
 Die Card ist unsichtbar und aktiviert nur den FAB. Beim Klick öffnet sich ein **Popup** mit Chat (fetch gegen den aufgelösten Ingress-Pfad) – **ohne iframe**.
 
+Im Popup gibt es bewusst **keine Chat-Auswahl** und **keine Löschfunktion**. Bei jedem Öffnen wird automatisch ein **neuer Chat** gestartet.
+
 ### Optional: Prefix manuell setzen
 
 Falls der Lookup-Endpoint aus dem Browser nicht erreichbar ist (Rechte), kannst du den von der Integration gelieferten Prefix fest eintragen (wie mit `curl` + Long-Lived Token ermittelt):

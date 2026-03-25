@@ -36,9 +36,10 @@
 - [x] README_HACS: Ingress/fetch-Limitierung dokumentiert; Konfiguration auf `href` + optional `zIndex` vereinfacht
 - [x] HACS FAB (ohne iframe): API-Basis per `GET /api/hassio_addon_ingress_path/<addon_slug>` (Integration „Expose Add-on Ingress Path“) oder manuell `ingress_api_base`; Chat per fetch unter `/api/hassio_ingress/<token>/api/*`
 - [x] README_HACS: auf Ingress-Path-Integration + YAML angepasst
+- [x] FAB-Popup vereinfacht: keine Chat-Auswahl, kein Löschen im Popup; beim Öffnen immer neuer Chat
+- [x] README_HACS: Popup-Verhalten (immer neuer Chat, keine Auswahl/Löschen) dokumentiert
 
 ## Nachfolgende Schritte
 
-- [ ] Optional: Chat löschen/umbenennen als weitere Sidebar-Aktionen ergänzen
 - [ ] Optional: Verbesserte mobile Darstellung der rechten Sidebar (Overlay/Collapse)
-- [ ] Optional: FAB-Popup iframe bei jedem Öffnen neu laden (`reload`), falls Session/State gewünscht
+- [ ] Optional: Fehleranzeige im FAB-Popup weiter verfeinern (mehr Kontext bei 401/403/404)
