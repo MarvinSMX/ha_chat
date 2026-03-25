@@ -302,9 +302,11 @@
       this._boundThreadClick = null;
       this._boundOutsidePointer = (e) => {
         if (!this._open || !this._popupEl) return;
+        const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
         const t = e.target;
-        const insidePopup = this._popupEl.contains(t);
-        const insideFab = this._overlayEl && this._overlayEl.contains(t);
+        const inPath = (el) => !!el && path.indexOf(el) !== -1;
+        const insidePopup = inPath(this._popupEl) || (t && t.nodeType === 1 && this._popupEl.contains(t));
+        const insideFab = this._overlayEl && (inPath(this._overlayEl) || (t && t.nodeType === 1 && this._overlayEl.contains(t)));
         if (!insidePopup && !insideFab) this._setOpen(false);
       };
       this.shadowRoot.innerHTML = `<style>:host{display:block;width:0;height:0;overflow:hidden;}</style>`;
