@@ -51,7 +51,7 @@
         background:var(--card-background-color, rgba(25,25,25,0.98));
         color:var(--primary-text-color, #e1e1e1);
         border:1px solid var(--divider-color, rgba(255,255,255,0.12));
-        border-radius:var(--ha-border-radius-lg, 12px);
+        border-radius:var(--ha-border-radius-md, 10px);
         box-shadow:var(--ha-box-shadow-l, 0 10px 30px rgba(0,0,0,.45));
         overflow:hidden;
         display:none;
@@ -76,7 +76,7 @@
       .${POPUP_CLASS} .head .btn:hover{background:rgba(255,255,255,0.08);color:var(--primary-text-color,#fff);}
       .${POPUP_CLASS} .body{flex:1;min-height:0;display:flex;flex-direction:column;}
       .${POPUP_CLASS} .thread{flex:1;min-height:0;overflow:auto;padding:12px;}
-      .${POPUP_CLASS} .msg{max-width:92%;padding:10px 12px;border-radius:16px;margin:6px 0;line-height:1.45;white-space:pre-wrap;word-break:break-word;font-size:0.95rem;}
+      .${POPUP_CLASS} .msg{max-width:92%;padding:11px 15px;border-radius:18px;margin:6px 0;line-height:1.55;white-space:pre-wrap;word-break:break-word;font-size:0.97rem;}
       .${POPUP_CLASS} .msg.user{margin-left:auto;background:var(--ha-color-fill-primary-loud-resting, #009ac7);color:var(--ha-color-on-primary-loud,#fff);border-bottom-right-radius:4px;}
       .${POPUP_CLASS} .msg.assistant{margin-right:auto;background:rgba(255,255,255,0.06);border:1px solid var(--divider-color, rgba(255,255,255,0.12));border-bottom-left-radius:4px;}
       .${POPUP_CLASS} .composer{padding:10px;border-top:1px solid var(--divider-color, rgba(255,255,255,0.12));}
@@ -175,6 +175,7 @@
       this._chatId = null;
       this._thread = [];
       this._busy = false;
+      this._resolvedApiBase = null;
       this._instanceId = 'fab-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
       this.shadowRoot.innerHTML = `<style>:host{display:none}</style>`;
     }
@@ -189,6 +190,7 @@
 
     setConfig(config) {
       this._config = config || {};
+      this._resolvedApiBase = null;
       this._updateOverlay();
     }
 
@@ -287,6 +289,7 @@
       this._mountPopup();
       if (!this._popupEl) return;
       this._popupEl.setAttribute('data-open', this._open ? 'true' : 'false');
+      if (this._overlayEl) this._overlayEl.style.display = this._open ? 'none' : 'flex';
       if (this._open) {
         const inp = this._popupEl.querySelector('input');
         if (inp) setTimeout(() => inp.focus(), 0);
@@ -294,16 +297,42 @@
       }
     }
 
-    _apiBase() {
+    async _resolveApiBase() {
+      if (this._resolvedApiBase) return this._resolvedApiBase;
+      const slug = (this._config && typeof this._config.slug === 'string' && this._config.slug.trim())
+        ? this._config.slug.trim()
+        : 'ha_chat';
+
+      const candidates = [
+        '/api/hassio/addons/' + encodeURIComponent(slug) + '/info',
+        '/api/hassio/addons/' + encodeURIComponent(slug),
+      ];
+      for (let i = 0; i < candidates.length; i++) {
+        try {
+          const d = await fetchJson(candidates[i]);
+          const data = d && (d.data || d);
+          const ingressUrl =
+            (data && typeof data.ingress_url === 'string' && data.ingress_url) ||
+            (data && typeof data.ingress === 'string' && data.ingress) ||
+            (data && typeof data.ingress_url_full === 'string' && data.ingress_url_full) ||
+            '';
+          if (ingressUrl && ingressUrl.startsWith('/')) {
+            this._resolvedApiBase = ingressUrl.replace(/\/$/, '');
+            return this._resolvedApiBase;
+          }
+        } catch (_) {}
+      }
+
       const href = (this._config && typeof this._config.href === 'string' && this._config.href.trim())
         ? this._config.href.trim().replace(/\/$/, '')
         : '/hassio/ingress/ha_chat';
-      return href;
+      this._resolvedApiBase = href;
+      return this._resolvedApiBase;
     }
 
     async _ensureChatLoaded() {
       try {
-        const api = this._apiBase();
+        const api = await this._resolveApiBase();
         const list = await fetchJson(joinUrl(api, '/api/chats'));
         const chats = (list && Array.isArray(list.chats)) ? list.chats : [];
         if (chats.length) {
@@ -319,7 +348,7 @@
     }
 
     async _loadChat(chatId) {
-      const api = this._apiBase();
+      const api = await this._resolveApiBase();
       const d = await fetchJson(joinUrl(api, '/api/chats/' + encodeURIComponent(chatId)));
       const chat = d && d.chat ? d.chat : {};
       this._chatId = chat.id || chatId;
@@ -360,7 +389,7 @@
       this._busy = true;
       if (send) send.disabled = true;
       try {
-        const api = this._apiBase();
+        const api = await this._resolveApiBase();
         if (!this._chatId) await this._ensureChatLoaded();
         this._thread = this._thread || [];
         this._thread.push({ role: 'user', content: text });
