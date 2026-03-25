@@ -1,6 +1,6 @@
-## HACS Frontend: HA Chat FAB
+## HACS Frontend: HA Chat FAB (Lovelace Card)
 
-Dieses Repo enthält zusätzlich eine HACS-Frontend-Resource, die auf Home Assistant Dashboards unten rechts ein schwebendes Chat-Icon einblendet.
+Dieses Repo enthält zusätzlich eine HACS-Frontend-Resource als **Lovelace Custom Card**. Du platzierst die Card in einem Dashboard/View – dann wird dort unten rechts ein schwebendes Chat-Icon eingeblendet.
 
 ### Installation (HACS)
 
@@ -9,17 +9,26 @@ Dieses Repo enthält zusätzlich eine HACS-Frontend-Resource, die auf Home Assis
   - URL: `/hacsfiles/ha-chat-fab/ha-chat-fab.js`
   - Typ: `JavaScript Module`
 
+### Nutzung (pro Dashboard/View)
+
+Füge in dem gewünschten Dashboard/View eine **Manuelle Karte** hinzu:
+
+```yaml
+type: custom:ha-chat-fab
+href: /hassio/ingress/ha_chat
+icon: mdi:chat
+```
+
+Die Card selbst ist unsichtbar, sie aktiviert nur den FAB für genau diesen View.
+
 ### Konfiguration (optional)
 
 Du kannst das Ziel und Position global überschreiben:
 
 ```js
-window.haChatFabConfig = {
-  href: "/hassio/ingress/ha_chat",
-  icon: "mdi:chat",
-  bottom: 20,
-  right: 20,
-  zIndex: 9999
-};
+type: custom:ha-chat-fab
+href: /hassio/ingress/ha_chat
+icon: mdi:chat
+zIndex: 9999
 ```
 
