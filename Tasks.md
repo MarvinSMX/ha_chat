@@ -51,6 +51,7 @@
 
 - [x] FAB: optionales `ha_bearer_token` / `bearer_token` / `ha_token` in YAML (Priorität vor Session-Token; wie curl); README-Hinweis Sicherheit
 - [x] FAB: feste YAML-Ingress-URL entfernt; Prefix wird jetzt immer per `/api/hassio_addon_ingress_path/<slug>` geholt
+- [x] FAB: optional `addon_direct_url` (Direktport wie Zircon3D-Workaround); Server CORS `Authorization` für Preflight
 
 ## Nachfolgende Schritte
 

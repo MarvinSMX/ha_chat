@@ -51,7 +51,32 @@ ha_bearer_token: DEIN_LONG_LIVED_ACCESS_TOKEN
 
 **Sicherheit:** Der Token steht im Klartext in der Lovelace-Konfiguration. Jeder mit Zugriff auf Dashboard-Bearbeitung oder Backups kann ihn lesen. Besser: Integration/HA so konfigurieren, dass Non-Admins den Lookup ohne festen Token nutzen dürfen.
 
-Die Card nutzt den Prefix **immer dynamisch** über `GET /api/hassio_addon_ingress_path/<addon_slug>` und akzeptiert **keine feste YAML-URL** für den Ingress-Pfad.
+Ohne **direkte Add-on-URL** (siehe nächster Abschnitt) wird der Prefix **ausschließlich dynamisch** über `GET /api/hassio_addon_ingress_path/<addon_slug>` geholt – keine feste `/api/hassio_ingress/...`-URL in YAML.
+
+### Optional: Direkter Host-Port (Ingress umgehen, z. B. wie Zircon3D)
+
+Manche Add-ons berichten, dass **Ingress** erst „warm“ ist, nachdem die Add-on-UI einmal aus HA geöffnet wurde – dann zeigen **iframe** oder API-Aufrufe vorher **401**. Ein Workaround ist, den **vom Supervisor gemappten Port** zu nutzen und die UI/API **direkt** anzusprechen (ohne `/api/hassio_ingress/...`).
+
+Welcher **Host-Port** für das Add-on freigegeben ist, siehst du im **Supervisor** unter der Add-on-Karte (Portzuordnung in `config.yaml` des Add-ons).
+
+In der Card kannst du optional setzen:
+
+```yaml
+type: custom:ha-chat-fab
+addon_direct_url: http://homeassistant.local:DEIN_HOST_PORT
+icon: mdi:chat
+```
+
+- Aliase: `addon_direct_url`, `direct_url`, `addon_port_url`
+- URL **mit** Schema (`http://` oder `https://`), **ohne** abschließenden Slash
+- Wenn gesetzt: **kein** Lookup `hassio_addon_ingress_path`; alle Requests gehen gegen `addon_direct_url` + `/api/...`
+- Der Server antwortet mit CORS inkl. **`Authorization`** (für Preflight), damit `fetch` vom Dashboard aus funktioniert
+
+**Hinweise**
+
+- **Mixed Content:** Dashboard über **HTTPS**, Add-on nur **HTTP** auf dem direkten Port → der Browser blockiert oft; dann Ingress-Pfad oder beides über HTTPS/Tunnel lösen.
+- **Sicherheit / Nutzer:** Ohne HA-Ingress setzt das Backend keine `x-hass-user-id` o. Ä.; API-Zugriffe laufen dann wie **ein gemeinsamer Nutzer** (`public` im Chat-Store). Nur im vertrauenswürdigen LAN sinnvoll.
+- Port in den **Add-on-Optionen** ggf. freigeben und Firewall beachten.
 
 ### Texte (Header, FAB, Willkommen)
 
@@ -71,6 +96,7 @@ icon: mdi:chat
 ### Weitere Optionen
 
 - `slug` – Alias für `addon_slug` (Abwärtskompatibilität)
+- `addon_direct_url` / `direct_url` / `addon_port_url` – direkte Basis-URL zum Add-on (Ingress umgehen)
 - `zIndex` – z. B. `100000`
 
 ### Hinweis zu `/hassio/ingress/...`

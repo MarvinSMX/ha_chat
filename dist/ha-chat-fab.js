@@ -12,6 +12,7 @@
  *   title: Popup-Header + FAB-Tooltip (Standard: HA Chat)
  *   welcome_title, welcome_subtitle: Empty-State (optional)
  *   ha_bearer_token: optional Long-Lived Token (wie curl -H "Authorization: Bearer …")
+ *   addon_direct_url: optional http(s)://host:PORT – umgeht HA-Ingress (wie Zircon3D-Workaround)
  */
 
 (() => {
@@ -413,6 +414,20 @@
       return s || '2954ddb4_ha_chat';
     }
 
+    _directAddonUrl() {
+      const c = this._config || {};
+      const keys = ['addon_direct_url', 'direct_url', 'addon_port_url'];
+      for (let i = 0; i < keys.length; i++) {
+        const v = c[keys[i]];
+        if (typeof v !== 'string') continue;
+        let u = v.trim().replace(/\/$/, '');
+        if (!u) continue;
+        if (!/^https?:\/\//i.test(u)) continue;
+        return u;
+      }
+      return '';
+    }
+
     setConfig(config) {
       this._config = config || {};
       this._apiPathPrefix = null;
@@ -444,7 +459,7 @@
 
     _apiUrl(path) {
       const p = path.startsWith('/') ? path : '/' + path;
-      return this._apiPathPrefix + p;
+      return (this._apiPathPrefix || '') + p;
     }
 
     _fetchIngressPath() {
@@ -473,6 +488,11 @@
     }
 
     _ensureApiBase() {
+      const direct = this._directAddonUrl();
+      if (direct) {
+        this._apiPathPrefix = direct;
+        return Promise.resolve(direct);
+      }
       if (this._apiPathPrefix) return Promise.resolve(this._apiPathPrefix);
       if (this._resolvePromise) return this._resolvePromise;
       const self = this;
@@ -498,10 +518,11 @@
         o.headers = h;
         return o;
       };
+      const skipIngressRetry = !!self._directAddonUrl();
       return this._ensureApiBase()
         .then(() => fetch(this._apiUrl(path), { ...fetchOpts, ...addAuth(init) }))
         .then((res) => {
-          if (mayRetry && (res.status === 401 || res.status === 403)) {
+          if (mayRetry && !skipIngressRetry && (res.status === 401 || res.status === 403)) {
             self._apiPathPrefix = null;
             return self._ensureApiBase()
               .then(() => fetch(self._apiUrl(path), { ...fetchOpts, ...addAuth(init) }));

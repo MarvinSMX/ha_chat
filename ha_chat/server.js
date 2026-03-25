@@ -337,11 +337,11 @@ const server = http.createServer(async (req, res) => {
   }
   const pathname = (normalizeIngressPath(rawPathname) || '/').replace(/\/$/, '') || '/';
 
-  // CORS für Ingress
+  // CORS: Ingress + optional direkter Host-Port (Lovelace fetch cross-origin)
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.writeHead(204);
     res.end();
     return;
