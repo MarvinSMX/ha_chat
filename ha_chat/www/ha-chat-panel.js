@@ -19,7 +19,7 @@
 
       *, *::before, *::after { box-sizing: border-box; }
       :host { display: block; height: 100%; }
-      .container { height: 100%; display: flex; flex-direction: row; padding: 0; background: var(--primary-background-color, #1c1c1c); color: var(--primary-text-color, #e0e0e0); font-family: inherit; gap: 0; }
+      .container { height: 100%; display: flex; flex-direction: row; padding: 0; background: var(--primary-background-color, #1c1c1c); color: var(--primary-text-color, #e0e0e0); font-family: inherit; gap: 0; position: relative; }
       .main { min-width: 0; flex: 1; display: flex; flex-direction: column; }
       .top-bar { width: 100%; display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 16px 16px 10px; min-height: 32px; flex-shrink: 0; }
       .chat-inner { width: 100%; flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 0 16px 16px; }
@@ -33,10 +33,9 @@
       .thread::-webkit-scrollbar-thumb:hover { background: #555; }
 
       /* ── Nachrichten-Spalte: gleiche Breite wie Input ── */
-      .msg-col { width: min(100%, 620px); margin: 0 auto; display: flex; flex-direction: column; align-items: flex-start; padding: 4px 0 8px; }
-      .empty-state { width: min(100%, 620px); min-height: 100%; margin: 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: #8f8f8f; }
+      .msg-col { width: min(100%, 620px); margin: 0 auto; display: flex; flex-direction: column; align-items: flex-start; padding: 4px 0 8px; min-height: 100%; }
+      .empty-state { width: 100%; flex: 1; min-height: 100%; margin: 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; }
       .empty-state img { width: 140px; height: 140px; opacity: 0.62; filter: grayscale(1) brightness(0.33) contrast(0.9); }
-      .empty-state-text { font-size: 0.92rem; }
       .msg { margin: 6px 0; padding: 11px 15px; border-radius: 18px; max-width: 92%; width: fit-content; line-height: 1.55; font-size: 0.97rem; }
       .msg.user { background: #009AC7; color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
       .msg.assistant { background: #2d2d2d; border: 1px solid #3a3a3a; border-bottom-left-radius: 4px; }
@@ -120,7 +119,6 @@
       .sync-btn.syncing svg { animation: sync-spin .8s linear infinite; }
 
       .sidebar { width: var(--ha-chat-sidebar-width, 256px); max-width: 45vw; background: var(--sidebar-background-color, #141414); color: var(--sidebar-text-color, var(--primary-text-color, #e1e1e1)); display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--divider-color, rgba(255,255,255,0.12)); }
-      .sidebar[aria-expanded="false"] { width: var(--ha-chat-sidebar-collapsed-width, 56px); }
       .sidebar-head { padding: 10px; border-bottom: 1px solid var(--divider-color, rgba(255,255,255,0.12)); display: flex; align-items: center; gap: 8px; }
       .sidebar-head-left { min-width: 0; flex: 1; display: flex; align-items: center; gap: 8px; }
       .sidebar-head-right { display: flex; align-items: center; gap: 6px; }
@@ -140,9 +138,18 @@
       .sidebar[aria-expanded="false"] .chat-item-meta { display: none; }
       .chat-item-title { font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .chat-item-meta { margin-top: 3px; font-size: 0.75rem; color: #888; }
+
+      .sidebar-expand-btn { position: absolute; top: 12px; right: 12px; width: 40px; height: 40px; border: 1px solid var(--divider-color, rgba(255,255,255,0.12)); background: var(--card-background-color, rgba(20,20,20,0.6)); color: var(--primary-text-color, #e1e1e1); border-radius: 9999px; cursor: pointer; display: none; align-items: center; justify-content: center; backdrop-filter: blur(6px); }
+      .sidebar-expand-btn:hover { background: rgba(255,255,255,0.08); }
+      .sidebar-expand-btn svg { width: 22px; height: 22px; }
     </style>
     <div class="img-lightbox" id="img-lightbox" style="display:none"><img id="img-lightbox-img" src="" alt=""></div>
     <div class="container">
+      <button id="sidebar-expand-btn" type="button" class="sidebar-expand-btn" aria-label="Seitenleiste öffnen" title="Seitenleiste öffnen">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path fill="currentColor" d="M3,8.39L4.41,7L9.42,12L4.41,17L3,15.61L6.56,12L3,8.39M8,6H21V8H8V6M11,13V11H21V13H11M8,18V16H21V18H8Z"></path>
+        </svg>
+      </button>
       <div class="main">
         <div class="top-bar"></div>
         <div class="chat-inner">
@@ -320,6 +327,7 @@
       var sendBtn = this.shadowRoot.getElementById('send');
       var threadEl = this.shadowRoot.getElementById('thread');
       var sidebarToggle = this.shadowRoot.getElementById('sidebar-toggle');
+      var sidebarExpandBtn = this.shadowRoot.getElementById('sidebar-expand-btn');
 
       /* Prompt-Vorschläge + Sync-Button: aus /config.json laden */
       this._renderSuggestions(PROMPT_SUGGESTIONS, input);
@@ -346,7 +354,11 @@
       sendBtn.addEventListener('click',  function () { self._send(); });
       input.addEventListener('keydown',  function (e) { if (e.key === 'Enter') self._send(); });
       if (sidebarToggle) sidebarToggle.addEventListener('click', function () {
-        self._sidebarExpanded = !self._sidebarExpanded;
+        self._sidebarExpanded = false;
+        self._applySidebarState();
+      });
+      if (sidebarExpandBtn) sidebarExpandBtn.addEventListener('click', function () {
+        self._sidebarExpanded = true;
         self._applySidebarState();
       });
 
@@ -391,7 +403,10 @@
     _applySidebarState() {
       var aside = this.shadowRoot.querySelector('.sidebar');
       if (!aside) return;
-      aside.setAttribute('aria-expanded', this._sidebarExpanded ? 'true' : 'false');
+      aside.style.display = this._sidebarExpanded ? 'flex' : 'none';
+
+      var expandBtn = this.shadowRoot.getElementById('sidebar-expand-btn');
+      if (expandBtn) expandBtn.style.display = this._sidebarExpanded ? 'none' : 'inline-flex';
 
       var graph = this.shadowRoot.getElementById('graph-status-sidebar');
       if (graph) graph.style.display = this._sidebarExpanded ? '' : 'none';
@@ -613,7 +628,7 @@
       if (this._thread.length === 0) {
         var empty = document.createElement('div');
         empty.className = 'empty-state';
-        empty.innerHTML = '<img src="' + escapeAttr(apiBase() + '/logo.svg') + '" alt="HA Chat Logo"><div class="empty-state-text">Starte einen neuen Chat.</div>';
+        empty.innerHTML = '<img src="' + escapeAttr(apiBase() + '/logo.svg') + '" alt="Home Assistant Logo">';
         msgCol.appendChild(empty);
       }
 
