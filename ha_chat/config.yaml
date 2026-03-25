@@ -1,6 +1,6 @@
 name: "Dokumentation"
 description: "Dokumentation für Home Assistant"
-version: "1.0.66"
+version: "1.0.67"
 slug: "ha_chat"
 init: false
 arch:
