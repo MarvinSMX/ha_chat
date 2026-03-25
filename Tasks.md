@@ -45,6 +45,8 @@
 - [x] FAB-Popup Empty-State: Willkommens-Screen + Suggestion-Chips wie in der App (bei leerem Chat)
 - [x] FAB: Ingress-Lookup nutzt automatisch User-Access-Token (`Authorization: Bearer`) aus HA-Card-Context, falls verfügbar
 
+- [x] FAB-Fallback-Fix: Bei 401/403 wird ingress_api_base jetzt wirklich Ã¼bersprungen und dynamischer Lookup erzwungen
+
 ## Nachfolgende Schritte
 
 - [ ] Optional: Verbesserte mobile Darstellung der rechten Sidebar (Overlay/Collapse)

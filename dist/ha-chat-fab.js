@@ -459,9 +459,9 @@
       });
     }
 
-    _ensureApiBase() {
+    _ensureApiBase(forceDynamic) {
       const manual = this._manualIngressBase();
-      if (manual) {
+      if (!forceDynamic && manual) {
         this._apiPathPrefix = manual;
         this._usingManualBase = true;
         return Promise.resolve(manual);
@@ -484,14 +484,14 @@
     _fetchApi(path, init, canRetry) {
       const self = this;
       const mayRetry = canRetry !== false;
-      return this._ensureApiBase()
+      return this._ensureApiBase(false)
         .then(() => fetch(this._apiUrl(path), { ...fetchOpts, ...(init || {}) }))
         .then((res) => {
           // If manual ingress path is stale/user-mismatched, re-resolve once per user.
           if (mayRetry && (res.status === 401 || res.status === 403)) {
             self._apiPathPrefix = null;
             self._usingManualBase = false;
-            return self._ensureApiBase()
+            return self._ensureApiBase(true)
               .then(() => fetch(self._apiUrl(path), { ...fetchOpts, ...(init || {}) }));
           }
           return res;
