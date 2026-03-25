@@ -45,13 +45,14 @@
       .${POPUP_CLASS}{
         position:fixed;
         right:calc(var(--ha-space-4, 16px) + var(--safe-area-inset-right, 0px));
-        bottom:calc(56px + var(--ha-space-4, 16px) + var(--safe-area-inset-bottom, 0px) + 10px);
+        bottom:calc(var(--ha-space-4, 16px) + var(--safe-area-inset-bottom, 0px));
         width:min(380px, calc(100vw - 24px));
         height:min(540px, calc(100vh - 120px));
         background:var(--card-background-color, rgba(25,25,25,0.98));
         color:var(--primary-text-color, #e1e1e1);
         border:1px solid var(--divider-color, rgba(255,255,255,0.12));
-        border-radius:var(--ha-border-radius-md, 10px);
+        border-radius:18px;
+        border-bottom-right-radius:4px;
         box-shadow:var(--ha-box-shadow-l, 0 10px 30px rgba(0,0,0,.45));
         overflow:hidden;
         display:none;
@@ -164,6 +165,11 @@
     return data;
   }
 
+  function setIngressCookie(session) {
+    if (!session) return;
+    document.cookie = `ingress_session=${session};path=/api/hassio_ingress/;SameSite=Strict${location.protocol === "https:" ? ";Secure" : ""}`;
+  }
+
   class HaChatFabCard extends HTMLElement {
     constructor() {
       super();
@@ -177,7 +183,7 @@
       this._busy = false;
       this._resolvedApiBase = null;
       this._instanceId = 'fab-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
-      this.shadowRoot.innerHTML = `<style>:host{display:none}</style>`;
+      this.shadowRoot.innerHTML = `<style>:host{display:block;width:0;height:0;overflow:hidden;}</style>`;
     }
 
     static getConfigElement() {
@@ -186,6 +192,10 @@
 
     static getStubConfig() {
       return { href: '/hassio/ingress/ha_chat', icon: 'mdi:chat' };
+    }
+
+    getCardSize() {
+      return 0;
     }
 
     setConfig(config) {
@@ -303,25 +313,21 @@
         ? this._config.slug.trim()
         : 'ha_chat';
 
-      const candidates = [
-        '/api/hassio/addons/' + encodeURIComponent(slug) + '/info',
-        '/api/hassio/addons/' + encodeURIComponent(slug),
-      ];
-      for (let i = 0; i < candidates.length; i++) {
-        try {
-          const d = await fetchJson(candidates[i]);
-          const data = d && (d.data || d);
-          const ingressUrl =
-            (data && typeof data.ingress_url === 'string' && data.ingress_url) ||
-            (data && typeof data.ingress === 'string' && data.ingress) ||
-            (data && typeof data.ingress_url_full === 'string' && data.ingress_url_full) ||
-            '';
-          if (ingressUrl && ingressUrl.startsWith('/')) {
-            this._resolvedApiBase = ingressUrl.replace(/\/$/, '');
-            return this._resolvedApiBase;
-          }
-        } catch (_) {}
-      }
+      try {
+        const s = await fetchJson('/api/hassio/ingress/session', { method: 'POST' });
+        const session = (s && s.data && s.data.session) ? s.data.session : (s && s.session);
+        if (session) setIngressCookie(session);
+      } catch (_) {}
+
+      try {
+        const info = await fetchJson('/api/hassio/addons/' + encodeURIComponent(slug) + '/info');
+        const data = info && info.data ? info.data : info;
+        const ingressUrl = data && typeof data.ingress_url === 'string' ? data.ingress_url : '';
+        if (ingressUrl && ingressUrl.startsWith('/')) {
+          this._resolvedApiBase = ingressUrl.replace(/\/$/, '');
+          return this._resolvedApiBase;
+        }
+      } catch (_) {}
 
       const href = (this._config && typeof this._config.href === 'string' && this._config.href.trim())
         ? this._config.href.trim().replace(/\/$/, '')

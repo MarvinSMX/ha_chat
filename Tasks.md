@@ -20,6 +20,8 @@
 - [x] HACS Frontend Resource: Dashboard Overlay Chat-FAB (unten rechts)
 - [x] HACS: FAB als Lovelace platzierbare Custom Card (pro Dashboard/View)
 - [x] HACS Fix: `ha-chat-fab.js` im Repo-Root + `content_in_root: true`
+- [x] Popup-Container-Rundung wie Chat-Bubbles (unten rechts kleiner)
+- [x] Popup exakt unten rechts (FAB-Position) + Card belegt keinen Dashboard-Platz
 - [x] Bestehende Frontend- und Backend-Chatlogik analysiert (`ha_chat/www/ha-chat-panel.js`, `ha_chat/server.js`)
 - [x] Empty-State mit zentriertem `logo.svg` im Chatbereich umgesetzt
 - [x] Rechte Sidebar mit Chatliste und Button `+ Neuer Chat` in der UI ergänzt
