@@ -8,7 +8,6 @@
  * Card type: custom:ha-chat-fab
  * Config:
  *   addon_slug: "2954ddb4_ha_chat"
- *   ingress_api_base: optional fest "/api/hassio_ingress/…" (wenn Lookup nicht geht)
  *   icon, zIndex
  *   title: Popup-Header + FAB-Tooltip (Standard: HA Chat)
  *   welcome_title, welcome_subtitle: Empty-State (optional)
@@ -311,7 +310,6 @@
       this._open = false;
       this._instanceId = 'fab-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
       this._apiPathPrefix = null;
-      this._usingManualBase = false;
       this._resolvePromise = null;
       this._sessionId = 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
       this._chatId = null;
@@ -415,16 +413,6 @@
       return s || '2954ddb4_ha_chat';
     }
 
-    _manualIngressBase() {
-      const c = this._config || {};
-      const k = ['ingress_api_base', 'api_base', 'ingress_path'];
-      for (let i = 0; i < k.length; i++) {
-        const v = c[k[i]];
-        if (typeof v === 'string' && v.trim()) return v.trim().replace(/\/$/, '');
-      }
-      return '';
-    }
-
     setConfig(config) {
       this._config = config || {};
       this._apiPathPrefix = null;
@@ -484,20 +472,13 @@
       });
     }
 
-    _ensureApiBase(forceDynamic) {
-      const manual = this._manualIngressBase();
-      if (!forceDynamic && manual) {
-        this._apiPathPrefix = manual;
-        this._usingManualBase = true;
-        return Promise.resolve(manual);
-      }
+    _ensureApiBase() {
       if (this._apiPathPrefix) return Promise.resolve(this._apiPathPrefix);
       if (this._resolvePromise) return this._resolvePromise;
       const self = this;
       this._resolvePromise = this._fetchIngressPath()
         .then((prefix) => {
           self._apiPathPrefix = prefix;
-          self._usingManualBase = false;
           return prefix;
         })
         .finally(() => {
@@ -517,14 +498,12 @@
         o.headers = h;
         return o;
       };
-      return this._ensureApiBase(false)
+      return this._ensureApiBase()
         .then(() => fetch(this._apiUrl(path), { ...fetchOpts, ...addAuth(init) }))
         .then((res) => {
-          // If manual ingress path is stale/user-mismatched, re-resolve once per user.
           if (mayRetry && (res.status === 401 || res.status === 403)) {
             self._apiPathPrefix = null;
-            self._usingManualBase = false;
-            return self._ensureApiBase(true)
+            return self._ensureApiBase()
               .then(() => fetch(self._apiUrl(path), { ...fetchOpts, ...addAuth(init) }));
           }
           return res;
@@ -766,7 +745,7 @@
       col.innerHTML = '';
 
       if (!this._apiPathPrefix) {
-        col.innerHTML = '<div class="empty-hint">Ingress-Pfad wird geladen oder fehlt (Integration / ingress_api_base).</div>';
+        col.innerHTML = '<div class="empty-hint">Ingress-Pfad wird geladen oder fehlt (Integration prüfen).</div>';
         return;
       }
 

@@ -51,19 +51,7 @@ ha_bearer_token: DEIN_LONG_LIVED_ACCESS_TOKEN
 
 **Sicherheit:** Der Token steht im Klartext in der Lovelace-Konfiguration. Jeder mit Zugriff auf Dashboard-Bearbeitung oder Backups kann ihn lesen. Besser: Integration/HA so konfigurieren, dass Non-Admins den Lookup ohne festen Token nutzen dürfen.
 
-### Optional: Prefix manuell setzen
-
-Falls der Lookup-Endpoint aus dem Browser nicht erreichbar ist (Rechte), kannst du den von der Integration gelieferten Prefix fest eintragen (wie mit `curl` + Long-Lived Token ermittelt):
-
-```yaml
-type: custom:ha-chat-fab
-ingress_api_base: /api/hassio_ingress/YLIRqE2IYAmkazvxxf9WN8LgxJ7gqTvfSP4lMacywZE
-icon: mdi:chat
-```
-
-Hinweis: Der Token kann sich ändern – dann Lookup wieder aktiv lassen oder Prefix aktualisieren.
-
-Wenn `ingress_api_base` gesetzt ist und Requests damit `401/403` liefern (z. B. bei Nicht-Admin), versucht die Card automatisch einmal den dynamischen Lookup pro eingeloggtem User und nutzt dann den neuen Prefix.
+Die Card nutzt den Prefix **immer dynamisch** über `GET /api/hassio_addon_ingress_path/<addon_slug>` und akzeptiert **keine feste YAML-URL** für den Ingress-Pfad.
 
 ### Texte (Header, FAB, Willkommen)
 
