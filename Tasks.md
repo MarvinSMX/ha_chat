@@ -32,7 +32,11 @@
 - [x] Chat-Sende- und Action-Requests auf `chat_id` erweitert
 - [x] Verifikation (Syntax-Checks mit `node --check`) durchgeführt
 
+- [x] HACS FAB: Popup nutzt iframe zur echten Chat-App (`href` = Panel/Ingress-URL); fetch-basierter API-Pfad von Lovelace entfernt (405/HTML-Problem)
+- [x] README_HACS: Ingress/fetch-Limitierung dokumentiert; Konfiguration auf `href` + optional `zIndex` vereinfacht
+
 ## Nachfolgende Schritte
 
 - [ ] Optional: Chat löschen/umbenennen als weitere Sidebar-Aktionen ergänzen
 - [ ] Optional: Verbesserte mobile Darstellung der rechten Sidebar (Overlay/Collapse)
+- [ ] Optional: FAB-Popup iframe bei jedem Öffnen neu laden (`reload`), falls Session/State gewünscht

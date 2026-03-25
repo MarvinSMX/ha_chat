@@ -1,15 +1,19 @@
 /* HA Chat FAB (HACS Frontend resource)
- * Lovelace Custom Card: place it in a dashboard/view to enable the FAB there.
+ * Lovelace Custom Card: FAB + Popup mit eingebetteter Chat-App (iframe).
+ *
+ * Warum iframe: HA leitet fetch() von der Dashboard-Seite zu
+ * /hassio/ingress/<slug>/api/* nicht zuverlässig an das Add-on durch
+ * (HTML-Shell, POST → 405). Die App im iframe nutzt dieselben URLs wie
+ * beim normalen Öffnen – Auth und API funktionieren dort.
  *
  * Card type: custom:ha-chat-fab
  * Config:
- *   href: "/hassio/ingress/ha_chat"   (default)
- *   icon: "mdi:chat"                 (default)
- *   zIndex: 9999                     (default)
+ *   href: "/app/2954ddb4_ha_chat" oder "/hassio/ingress/ha_chat"
+ *   icon: "mdi:chat"
+ *   zIndex: 100000
  */
 
 (() => {
-  const CARD_TYPE = 'ha-chat-fab';
   const OVERLAY_CLASS = 'ha-chat-fab-overlay';
   const STYLE_ID = 'ha-chat-fab-styles';
   const POPUP_CLASS = 'ha-chat-fab-popup';
@@ -62,6 +66,7 @@
       .${POPUP_CLASS}[data-open="true"]{display:flex;}
       .${POPUP_CLASS} .head{
         height:56px;
+        flex-shrink:0;
         display:flex;
         align-items:center;
         justify-content:space-between;
@@ -76,29 +81,13 @@
       }
       .${POPUP_CLASS} .head .btn:hover{background:rgba(255,255,255,0.08);color:var(--primary-text-color,#fff);}
       .${POPUP_CLASS} .body{flex:1;min-height:0;display:flex;flex-direction:column;}
-      .${POPUP_CLASS} .thread{flex:1;min-height:0;overflow:auto;padding:12px;}
-      .${POPUP_CLASS} .msg{max-width:92%;padding:11px 15px;border-radius:18px;margin:6px 0;line-height:1.55;white-space:pre-wrap;word-break:break-word;font-size:0.97rem;}
-      .${POPUP_CLASS} .msg.user{margin-left:auto;background:var(--ha-color-fill-primary-loud-resting, #009ac7);color:var(--ha-color-on-primary-loud,#fff);border-bottom-right-radius:4px;}
-      .${POPUP_CLASS} .msg.assistant{margin-right:auto;background:rgba(255,255,255,0.06);border:1px solid var(--divider-color, rgba(255,255,255,0.12));border-bottom-left-radius:4px;}
-      .${POPUP_CLASS} .composer{padding:10px;border-top:1px solid var(--divider-color, rgba(255,255,255,0.12));}
-      .${POPUP_CLASS} .row{display:flex;gap:8px;align-items:center;}
-      .${POPUP_CLASS} input{
-        flex:1;min-width:0;
-        padding:10px 12px;border-radius:9999px;
-        border:1px solid var(--divider-color, rgba(255,255,255,0.12));
-        background:rgba(0,0,0,0.18);
-        color:var(--primary-text-color,#e1e1e1);
-        outline:none;
+      .${POPUP_CLASS} iframe{
+        flex:1;
+        width:100%;
+        min-height:0;
+        border:0;
+        background:var(--primary-background-color, #1c1c1c);
       }
-      .${POPUP_CLASS} input:focus{border-color:var(--primary-color,#009ac7);box-shadow:0 0 0 1px var(--primary-color,#009ac7);}
-      .${POPUP_CLASS} .send{
-        width:40px;height:40px;border-radius:9999px;border:none;cursor:pointer;
-        background:var(--ha-color-fill-primary-loud-resting, #009ac7);
-        color:var(--ha-color-on-primary-loud,#fff);
-        display:flex;align-items:center;justify-content:center;
-      }
-      .${POPUP_CLASS} .send:disabled{opacity:0.5;cursor:not-allowed;}
-      .${POPUP_CLASS} .err{padding:8px 12px;color:#ff8a80;font-size:0.85rem;display:none;}
     `;
     r.appendChild(style);
   }
@@ -119,7 +108,6 @@
   }
 
   function createIconEl(iconName) {
-    // Prefer HA icon element; fallback to inline SVG if it doesn't render.
     const wrap = document.createElement('span');
     wrap.style.display = 'inline-flex';
     wrap.style.alignItems = 'center';
@@ -129,7 +117,6 @@
     haIcon.setAttribute('icon', iconName || 'mdi:chat');
     wrap.appendChild(haIcon);
 
-    // Fallback SVG (chat bubble)
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('aria-hidden', 'true');
@@ -141,7 +128,6 @@
     svg.style.display = 'none';
     wrap.appendChild(svg);
 
-    // If ha-icon never upgrades/renders, show svg after a tick.
     setTimeout(() => {
       const upgraded = !!(customElements.get('ha-icon') && haIcon.shadowRoot);
       if (!upgraded) {
@@ -153,23 +139,6 @@
     return wrap;
   }
 
-  function joinUrl(base, path) {
-    const b = (base || '').replace(/\/$/, '');
-    const p = (path || '').startsWith('/') ? path : '/' + path;
-    return b + p;
-  }
-
-  async function fetchJson(url, opts) {
-    const r = await fetch(url, Object.assign({ credentials: 'include' }, opts || {}));
-    const t = await r.text();
-    let data = null;
-    try { data = JSON.parse(t || '{}'); } catch (_) {
-      throw new Error('Kein JSON (' + r.status + ' ' + url + '): ' + (t || '').slice(0, 80));
-    }
-    if (!r.ok) throw new Error(((data && (data.error || data.message)) || ('HTTP ' + r.status)) + ' (' + url + ')');
-    return data;
-  }
-
   class HaChatFabCard extends HTMLElement {
     constructor() {
       super();
@@ -178,10 +147,7 @@
       this._overlayEl = null;
       this._popupEl = null;
       this._open = false;
-      this._chatId = null;
-      this._thread = [];
-      this._busy = false;
-      this._resolvedApiBase = null;
+      this._iframeLoaded = false;
       this._instanceId = 'fab-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
       this.shadowRoot.innerHTML = `<style>:host{display:block;width:0;height:0;overflow:hidden;}</style>`;
     }
@@ -189,9 +155,7 @@
     static getStubConfig() {
       return {
         href: '/app/2954ddb4_ha_chat',
-        api_base: '/hassio/ingress/ha_chat',
         icon: 'mdi:chat',
-        slug: '2954ddb4_ha_chat'
       };
     }
 
@@ -199,9 +163,20 @@
       return 0;
     }
 
+    _panelUrl() {
+      const h = (this._config && typeof this._config.href === 'string' && this._config.href.trim())
+        ? this._config.href.trim().replace(/\/$/, '')
+        : '';
+      return h || '/app/2954ddb4_ha_chat';
+    }
+
     setConfig(config) {
       this._config = config || {};
-      this._resolvedApiBase = null;
+      this._iframeLoaded = false;
+      if (this._popupEl) {
+        const iframe = this._popupEl.querySelector('iframe');
+        if (iframe) iframe.removeAttribute('src');
+      }
       this._updateOverlay();
     }
 
@@ -265,24 +240,11 @@
           </button>
         </div>
         <div class="body">
-          <div class="thread"></div>
-          <div class="err"></div>
-          <div class="composer">
-            <div class="row">
-              <input type="text" placeholder="Nachricht…" />
-              <button class="send" type="button" aria-label="Senden" title="Senden">
-                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M2,21L23,12L2,3V10L17,12L2,14V21Z"></path></svg>
-              </button>
-            </div>
-          </div>
+          <iframe title="HA Chat" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
         </div>
       `;
 
       pop.querySelector('.btn').addEventListener('click', () => this._setOpen(false));
-      const input = pop.querySelector('input');
-      const send = pop.querySelector('.send');
-      send.addEventListener('click', () => this._sendFromPopup());
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._sendFromPopup(); });
 
       root.appendChild(pop);
       this._popupEl = pop;
@@ -291,6 +253,7 @@
     _unmountPopup() {
       if (this._popupEl && this._popupEl.parentNode) this._popupEl.parentNode.removeChild(this._popupEl);
       this._popupEl = null;
+      this._iframeLoaded = false;
     }
 
     _togglePopup() {
@@ -303,111 +266,13 @@
       if (!this._popupEl) return;
       this._popupEl.setAttribute('data-open', this._open ? 'true' : 'false');
       if (this._overlayEl) this._overlayEl.style.display = this._open ? 'none' : 'flex';
+
       if (this._open) {
-        const inp = this._popupEl.querySelector('input');
-        if (inp) setTimeout(() => inp.focus(), 0);
-        if (!this._chatId) this._ensureChatLoaded();
-      }
-    }
-
-    async _resolveApiBase() {
-      if (this._resolvedApiBase) return this._resolvedApiBase;
-      const cfgApiBase = (this._config && typeof this._config.api_base === 'string' && this._config.api_base.trim())
-        ? this._config.api_base.trim().replace(/\/$/, '')
-        : '';
-      const candidates = [];
-      if (cfgApiBase) candidates.push(cfgApiBase);
-      candidates.push('/hassio/ingress/ha_chat');
-
-      for (let i = 0; i < candidates.length; i++) {
-        const base = candidates[i];
-        try {
-          await fetchJson(joinUrl(base, '/api/chats'));
-          this._resolvedApiBase = base;
-          return this._resolvedApiBase;
-        } catch (_) {}
-      }
-
-      // Last resort
-      this._resolvedApiBase = cfgApiBase || '/hassio/ingress/ha_chat';
-      return this._resolvedApiBase;
-    }
-
-    async _ensureChatLoaded() {
-      try {
-        const api = await this._resolveApiBase();
-        const list = await fetchJson(joinUrl(api, '/api/chats'));
-        const chats = (list && Array.isArray(list.chats)) ? list.chats : [];
-        if (chats.length) {
-          await this._loadChat(chats[0].id);
+        const iframe = this._popupEl.querySelector('iframe');
+        if (iframe && !this._iframeLoaded) {
+          iframe.src = this._panelUrl();
+          this._iframeLoaded = true;
         }
-      } catch (e) {
-        this._showErr(e.message || String(e));
-      }
-    }
-
-    async _loadChat(chatId) {
-      const api = await this._resolveApiBase();
-      const d = await fetchJson(joinUrl(api, '/api/chats/' + encodeURIComponent(chatId)));
-      const chat = d && d.chat ? d.chat : {};
-      this._chatId = chat.id || chatId;
-      this._thread = Array.isArray(chat.messages) ? chat.messages : [];
-      this._renderThread();
-    }
-
-    _showErr(msg) {
-      if (!this._popupEl) return;
-      const el = this._popupEl.querySelector('.err');
-      if (!el) return;
-      el.textContent = msg || '';
-      el.style.display = msg ? 'block' : 'none';
-    }
-
-    _renderThread() {
-      if (!this._popupEl) return;
-      const t = this._popupEl.querySelector('.thread');
-      if (!t) return;
-      t.innerHTML = '';
-      (this._thread || []).forEach((m) => {
-        const div = document.createElement('div');
-        div.className = 'msg ' + (m.role === 'user' ? 'user' : 'assistant');
-        div.textContent = (m && m.content != null) ? String(m.content) : '';
-        t.appendChild(div);
-      });
-      t.scrollTop = t.scrollHeight;
-    }
-
-    async _sendFromPopup() {
-      if (!this._popupEl || this._busy) return;
-      const input = this._popupEl.querySelector('input');
-      const send = this._popupEl.querySelector('.send');
-      const text = input ? String(input.value || '').trim() : '';
-      if (!text) return;
-      this._showErr('');
-      if (input) input.value = '';
-      this._busy = true;
-      if (send) send.disabled = true;
-      try {
-        const api = await this._resolveApiBase();
-        if (!this._chatId) await this._ensureChatLoaded();
-        this._thread = this._thread || [];
-        this._thread.push({ role: 'user', content: text });
-        this._renderThread();
-
-        const d = await fetchJson(joinUrl(api, '/api/chat'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, chat_id: this._chatId })
-        });
-        if (d && d.chat_id && !this._chatId) this._chatId = d.chat_id;
-        const answer = d && (d.answer != null ? d.answer : '');
-        this._thread.push({ role: 'assistant', content: String(answer || '') });
-        this._renderThread();
-      } catch (e) {
-        this._showErr(e.message || String(e));
-      } finally {
-        this._busy = false;
-        if (send) send.disabled = false;
       }
     }
 
@@ -437,7 +302,6 @@
   window.customCards.push({
     type: 'ha-chat-fab',
     name: 'HA Chat FAB',
-    description: 'Floating HA Chat button (bottom right) for this dashboard/view.',
+    description: 'Floating chat button; opens embedded HA Chat app (iframe).',
   });
 })();
-
