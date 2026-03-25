@@ -20,6 +20,22 @@ Zusätzlich nutzt die Card, wenn verfügbar, automatisch den **aktuellen HA Acce
 - Resource: **Einstellungen → Dashboards → Ressourcen**
   - URL: `/hacsfiles/<dein-repo-name>/ha-chat-fab.js`
   - Typ: `JavaScript Module`
+- Nach Updates in HACS **„Erneut herunterladen“** / neu installieren, damit die neueste `ha-chat-fab.js` ankommt.
+
+### Wenn weiterhin `hand.png` (404) geladen wird
+
+Dann läuft noch eine **alte** Version der Card (Browser- oder Service-Worker-Cache): früher wurde `hand.png` unter `/hacsfiles/...` angefragt – **aktuelle** Builds nutzen nur eine **Data-URL im JavaScript**, ohne zweite Datei.
+
+So bekommst du die neue Version sicher:
+
+1. **HACS** → Frontend-Repository → **Erneut herunterladen** (oder neu installieren).
+2. **Ressourcen-URL** kurz mit Cache-Buster anpassen, z. B.  
+   `/hacsfiles/ha_chat/ha-chat-fab.js?v=3`  
+   (Zahl bei jedem Update erhöhen), speichern.
+3. Im Browser für die HA-Seite **harten Reload** (z. B. Strg+F5) oder Site-Daten für die HA-Domain löschen.
+4. In der Card-YAML **kein** `welcome_image_url: …/hacsfiles/…/hand.png` setzen (optional nur `/local/...` oder weglassen).
+
+Zur Kontrolle: In den Entwicklertools unter der geladenen `ha-chat-fab.js` sollte der Text **`build 3`** in der `customCards`-Beschreibung vorkommen.
 
 ### Nutzung (pro Dashboard/View)
 
