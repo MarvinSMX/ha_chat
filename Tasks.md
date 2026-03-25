@@ -34,6 +34,8 @@
 
 - [x] HACS FAB: Popup nutzt iframe zur echten Chat-App (`href` = Panel/Ingress-URL); fetch-basierter API-Pfad von Lovelace entfernt (405/HTML-Problem)
 - [x] README_HACS: Ingress/fetch-Limitierung dokumentiert; Konfiguration auf `href` + optional `zIndex` vereinfacht
+- [x] HACS FAB (ohne iframe): API-Basis per `GET /api/hassio_addon_ingress_path/<addon_slug>` (Integration „Expose Add-on Ingress Path“) oder manuell `ingress_api_base`; Chat per fetch unter `/api/hassio_ingress/<token>/api/*`
+- [x] README_HACS: auf Ingress-Path-Integration + YAML angepasst
 
 ## Nachfolgende Schritte
 

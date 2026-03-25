@@ -2,41 +2,53 @@
 
 Dieses Repo enthält zusätzlich eine HACS-Frontend-Resource als **Lovelace Custom Card**. Du platzierst die Card in einem Dashboard/View – dann wird dort unten rechts ein schwebendes Chat-Icon eingeblendet.
 
-### Warum kein `fetch()` zum Ingress?
+### Ohne iframe: API über den echten Ingress-Pfad
 
-Von der normalen HA-Oberfläche (Lovelace) führen Requests zu `/hassio/ingress/<slug>/api/...` oft **nicht** zum Add-on: Antwort kann die **HA-Shell (HTML)** sein, **POST** kann **405 Method Not Allowed** liefern. Das ist eine Eigenschaft des Ingress-/Proxy-Pfads für Seitenkontexte außerhalb der eingebetteten App.
+Von Lovelace aus führen Requests zu **`/hassio/ingress/<name>/api/...`** oft **nicht** zum Add-on (HA-HTML, **405** bei POST).
 
-Diese Card öffnet deshalb ein **Popup mit `<iframe>`**, dessen `src` dieselbe URL ist wie beim direkten Öffnen der Chat-App (z. B. `/app/<slug>_ha_chat`). Darin laufen Skripte und API-Aufrufe wie in der Vollansicht.
+Die Card nutzt stattdessen den Pfad **`/api/hassio_ingress/<token>/api/...`**, den Home Assistant intern für das Add-on verwendet. Den Pfadprefix liefert die HACS-Integration **„Expose Add-on Ingress Path“** über:
+
+`GET /api/hassio_addon_ingress_path/<addon_slug>`
+
+(mit deiner **eingeloggten HA-Session** – gleiche Origin, Cookies; kein Long-Lived Token in der Card nötig).
 
 ### Installation (HACS)
 
-- In HACS: **Frontend** → **Custom repositories** → dieses Git-Repo hinzufügen (Kategorie **Frontend**).
-- Resource hinzufügen: **Einstellungen → Dashboards → Ressourcen**
+- Integration **Expose Add-on Ingress Path** installieren, einrichten, Home Assistant neu starten (siehe Anleitung der Integration).
+- Dieses Repo in HACS als **Frontend**-Repository hinzufügen.
+- Resource: **Einstellungen → Dashboards → Ressourcen**
   - URL: `/hacsfiles/<dein-repo-name>/ha-chat-fab.js`
   - Typ: `JavaScript Module`
 
 ### Nutzung (pro Dashboard/View)
 
-Füge in dem gewünschten Dashboard/View eine **Manuelle Karte** hinzu:
-
 ```yaml
 type: custom:ha-chat-fab
-href: /app/2954ddb4_ha_chat
+addon_slug: 2954ddb4_ha_chat
 icon: mdi:chat
 ```
 
-`href` muss die **funktionierende App-URL** deiner Installation sein (wie in der Seitenleiste unter Add-ons → HA Chat → „Im Web öffnen“ oder der Panel-Pfad mit Repo-Slug).
+`addon_slug` = Add-on-ID wie in der URL/API (z. B. `2954ddb4_ha_chat`).
 
-Die Card selbst ist unsichtbar, sie aktiviert nur den FAB für genau diesen View.  
-Beim Klick öffnet sich ein **Popup unten rechts** (kein Seitenwechsel) mit der eingebetteten Chat-App.
+Die Card ist unsichtbar und aktiviert nur den FAB. Beim Klick öffnet sich ein **Popup** mit Chat (fetch gegen den aufgelösten Ingress-Pfad) – **ohne iframe**.
 
-### Konfiguration (optional)
+### Optional: Prefix manuell setzen
+
+Falls der Lookup-Endpoint aus dem Browser nicht erreichbar ist (Rechte), kannst du den von der Integration gelieferten Prefix fest eintragen (wie mit `curl` + Long-Lived Token ermittelt):
 
 ```yaml
 type: custom:ha-chat-fab
-href: /hassio/ingress/ha_chat
+ingress_api_base: /api/hassio_ingress/YLIRqE2IYAmkazvxxf9WN8LgxJ7gqTvfSP4lMacywZE
 icon: mdi:chat
-zIndex: 100000
 ```
 
-Falls bei dir nur der Ingress-Pfad stabil ist, kannst du ihn als `href` setzen – wichtig ist, dass dieselbe URL im Browser auch die Chat-UI lädt (nicht nur für `fetch` von Lovelace).
+Hinweis: Der Token kann sich ändern – dann Lookup wieder aktiv lassen oder Prefix aktualisieren.
+
+### Weitere Optionen
+
+- `slug` – Alias für `addon_slug` (Abwärtskompatibilität)
+- `zIndex` – z. B. `100000`
+
+### Hinweis zu `/hassio/ingress/...`
+
+Dieser Supervisor-Pfad bleibt für die **eingebettete Web-UI** des Add-ons gedacht; für **programmatische** Aufrufe von Lovelace aus ist **`/api/hassio_ingress/<token>/...`** der passende Zielpfad.
