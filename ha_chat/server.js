@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const crypto = require('crypto');
+const { handleMcpHttp } = require('./mcp-handler.js');
 
 // HTTPS-Aufrufe zu N8N: Zertifikatsprüfung überspringen (z. B. selbstsigniert / lokales N8N)
 if (process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '1') {
@@ -48,6 +49,10 @@ function getOptions() {
       graph_client_id:           (opts.graph_client_id           || '').trim(),
       graph_client_secret:       (opts.graph_client_secret       || '').trim(),
       prompt_suggestions: suggestions,
+      mcp_enabled:               opts.mcp_enabled !== false,
+      mcp_bearer_token:          (opts.mcp_bearer_token          || '').trim(),
+      mcp_entity_allowlist:      (opts.mcp_entity_allowlist      || '').trim(),
+      mcp_domain_allowlist:      (opts.mcp_domain_allowlist      || '').trim(),
     };
   } catch (e) {
     if (e.code !== 'ENOENT') console.log('[HA Chat] options.json:', e.message);
@@ -61,6 +66,10 @@ function getOptions() {
     graph_client_id:           (process.env.GRAPH_CLIENT_ID           || '').trim(),
     graph_client_secret:       (process.env.GRAPH_CLIENT_SECRET       || '').trim(),
     prompt_suggestions: DEFAULT_SUGGESTIONS,
+    mcp_enabled:               process.env.MCP_ENABLED !== '0' && process.env.MCP_ENABLED !== 'false',
+    mcp_bearer_token:          (process.env.MCP_BEARER_TOKEN          || '').trim(),
+    mcp_entity_allowlist:      (process.env.MCP_ENTITY_ALLOWLIST      || '').trim(),
+    mcp_domain_allowlist:      (process.env.MCP_DOMAIN_ALLOWLIST      || '').trim(),
   };
 }
 
@@ -337,13 +346,35 @@ const server = http.createServer(async (req, res) => {
   }
   const pathname = (normalizeIngressPath(rawPathname) || '/').replace(/\/$/, '') || '/';
 
+  const isMcpPath = pathname === '/api/mcp' || pathname.startsWith('/api/mcp/');
+
   // CORS: Ingress + optional direkter Host-Port (Lovelace fetch cross-origin)
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    const mcpHeaders = 'Content-Type, Authorization, Accept, Mcp-Session-Id, mcp-session-id, mcp-protocol-version';
+    res.setHeader('Access-Control-Allow-Headers', isMcpPath ? mcpHeaders : 'Content-Type, Authorization');
     res.writeHead(204);
     res.end();
+    return;
+  }
+
+  // MCP (Streamable HTTP) – gleicher Port wie UI / Host-Port-Mapping
+  if (isMcpPath && (req.method === 'GET' || req.method === 'POST' || req.method === 'DELETE')) {
+    let parsedBody;
+    if (req.method === 'POST') {
+      const raw = await collectBody(req);
+      parsedBody = raw;
+    }
+    try {
+      await handleMcpHttp(req, res, getOptions(), parsedBody);
+    } catch (e) {
+      console.error('[HA Chat] MCP Außenfehler:', e);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message || String(e) }));
+      }
+    }
     return;
   }
 
@@ -824,6 +855,14 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   const inferenceUrl = getInferenceUrl();
-  console.log('HA Chat (Frontend + N8N Proxy) auf http://0.0.0.0:' + PORT);
+  const o = getOptions();
+  console.log('HA Chat (Frontend + N8N Proxy + MCP) auf http://0.0.0.0:' + PORT);
   console.log('[HA Chat] N8N Inference-Webhook: ' + (inferenceUrl ? 'gesetzt (' + inferenceUrl.split('/')[0] + '//' + (inferenceUrl.split('/')[2] || '') + '/…)' : 'nicht konfiguriert'));
+  if (o.mcp_enabled && o.mcp_bearer_token) {
+    console.log('[HA Chat] MCP Streamable HTTP: /api/mcp (Bearer mcp_bearer_token; stateless)');
+  } else if (o.mcp_enabled) {
+    console.log('[HA Chat] MCP: mcp_bearer_token setzen, sonst Endpoint deaktiviert (503).');
+  } else {
+    console.log('[HA Chat] MCP: aus (mcp_enabled: false)');
+  }
 });

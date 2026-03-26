@@ -87,6 +87,7 @@ icon: mdi:chat
 - URL **mit** Schema (`http://` oder `https://`), **ohne** abschließenden Slash
 - Wenn gesetzt: **kein** Lookup `hassio_addon_ingress_path`; alle Requests gehen gegen `addon_direct_url` + `/api/...`
 - Der Server antwortet mit CORS inkl. **`Authorization`** (für Preflight), damit `fetch` vom Dashboard aus funktioniert
+- Derselbe Host (Ingress oder direkter Port) bietet **MCP (Streamable HTTP)** unter **`/api/mcp`** mit Add-on-Option **mcp_bearer_token** – Details im Add-on-`README.md`.
 
 **Hinweise**
 

@@ -1,6 +1,6 @@
 name: "Dokumentation"
 description: "Dokumentation für Home Assistant"
-version: "1.0.102"
+version: "1.0.103"
 slug: "ha_chat"
 init: false
 arch:
@@ -22,6 +22,10 @@ options:
   graph_tenant_id: ""
   graph_client_id: ""
   graph_client_secret: ""
+  mcp_enabled: true
+  mcp_bearer_token: ""
+  mcp_entity_allowlist: ""
+  mcp_domain_allowlist: ""
   prompt_suggestions:
     - "Was kann ich dich fragen?"
     - "Welche Lichter sind gerade an?"
@@ -35,5 +39,9 @@ schema:
   graph_tenant_id: str
   graph_client_id: str
   graph_client_secret: str
+  mcp_enabled: bool
+  mcp_bearer_token: password
+  mcp_entity_allowlist: str
+  mcp_domain_allowlist: str
   prompt_suggestions:
     - str

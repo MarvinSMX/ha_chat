@@ -53,11 +53,25 @@ Der Add-on-Server leitet den Aufruf an die Home-Assistant-API weiter (Endpoint `
 
 **State-Anzeige:** Wenn **HA URL** und **HA Token** gesetzt sind, fragt die App den aktuellen State jeder Entity ab (`/api/ha_entity_state`). Entity-Buttons werden dann mit **MDI-Icon** (vor dem Text) und **Farbe** dargestellt: **an** (z. B. on, open) = Primary-Farbe (#009AC7), **aus** (off, closed) = grau.
 
-### MCP (Model Context Protocol) und N8N
+### MCP (Model Context Protocol) im Add-on
 
-**Kann ein MCP-Server in der App laufen und HA-Entitäten bereitstellen?**
+Der Server bietet **Streamable HTTP** (stateless) unter **`/api/mcp`** – **derselbe Port** wie die Web-UI (Ingress oder direkter Host-Port, z. B. `:8765`).
 
-- **Ja, möglich:** Ein MCP-Server könnte im gleichen Add-on (oder als separates Add-on) laufen und über die HA-REST-API (mit `ha_url` + `ha_token`) Entitäten auflisten und Services aufrufen. N8N (oder ein LLM-Node mit MCP-Client) könnte sich zu diesem MCP-Server verbinden und so z. B. „alle Lichter“ abfragen oder „light.living_room einschalten“ ausführen.
-- **Aktuell nicht enthalten:** Dieses Add-on enthält keinen MCP-Server. Du kannst einen eigenen MCP-Server (z. B. in Node oder Python) betreiben, der die HA-API anbindet, und N8N als MCP-Client darauf zugreifen lassen. Die Add-on-Optionen **HA URL** und **HA Token** könnten dann auch vom MCP-Server gelesen werden (z. B. aus derselben `options.json` oder Umgebungsvariablen).
+**Authentifizierung:** `Authorization: Bearer <mcp_bearer_token>` (Add-on-Option **mcp_bearer_token** setzen; ohne Token antwortet der Endpoint mit 503). Das ist **unabhängig** vom Home-Assistant-MCP unter `/api/mcp` auf der HA-Instanz.
 
-Embedding, Vektorspeicher, LLM – alles in deinem N8N-Workflow.
+**Home Assistant:** Es werden weiterhin **HA URL** und **HA Token** aus der Add-on-Konfiguration verwendet (REST `/api/states`, `/api/services/...`).
+
+**Einschränkung sichtbarer/steuerbarer Entities (pro „Profil“ / pro Client):**
+
+- **mcp_entity_allowlist** – kommagetrennt oder zeilenweise: nur diese `entity_id`-Werte (z. B. `light.wohnzimmer,switch.kueche`).
+- **mcp_domain_allowlist** – z. B. `light,switch` – nur Entities dieser Domains.
+- Beide Felder gesetzt: eine Entity muss **beiden** Bedingungen genügen (ID in Liste **und** Domain erlaubt).
+- Leer lassen: alles, was das **HA-Token** darf.
+
+**Tools:** `list_entities`, `get_entity_state`, `call_service` (mit `service_data.entity_id` bei eingeschränktem Zugriff). **Prompt:** `ha_chat_scoped_assistant`.
+
+**Client-Beispiel (URL):** `http://<host>:8765/api/mcp` bzw. über Ingress die Add-on-URL + `/api/mcp`. Für Cursor o. Ä. analog zur HA-Doku mit **mcp-proxy** und `--transport=streamablehttp --stateless`, Ziel-URL auf dieses Add-on zeigen und `Authorization: Bearer <mcp_bearer_token>` setzen.
+
+**Abschalten:** **mcp_enabled** auf `false`.
+
+Embedding, Vektorspeicher, LLM – weiterhin in deinem N8N-Workflow.
