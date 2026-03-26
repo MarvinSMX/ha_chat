@@ -57,6 +57,7 @@
 - [x] FAB: `welcome_image_url` auf `/hacsfiles/.../hand.png` wird ignoriert (404-Schutz); README: Cache-Buster + HACS neu laden; customCards **build 3**
 - [x] FAB: Backdrop beim geöffneten Popup leicht abgedunkelt (`rgba(0,0,0,0.32)`)
 - [x] Add-on: MCP Streamable HTTP unter `/api/mcp` (gleicher Port wie UI/Host-Port); `@modelcontextprotocol/sdk`; `mcp_bearer_token` + Allowlists; Dockerfile `npm ci`
+- [x] FAB-Popup minimal vergrößert (Breite/Höhe leicht erhöht)
 
 ## Nachfolgende Schritte
 

@@ -187,8 +187,8 @@
         position:fixed;
         right:calc(var(--ha-space-4, 16px) + var(--safe-area-inset-right, 0px));
         bottom:calc(var(--ha-space-4, 16px) + var(--safe-area-inset-bottom, 0px));
-        width:min(380px, calc(100vw - 24px));
-        height:min(540px, calc(100vh - 120px));
+        width:min(396px, calc(100vw - 24px));
+        height:min(560px, calc(100vh - 112px));
         background:var(--card-background-color, rgba(25,25,25,0.98));
         color:var(--primary-text-color, #e1e1e1);
         border:1px solid var(--divider-color, rgba(255,255,255,0.12));
