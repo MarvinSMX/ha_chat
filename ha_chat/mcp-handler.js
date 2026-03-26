@@ -82,6 +82,29 @@ function textResult(obj) {
   return { content: [{ type: 'text', text: s.slice(0, 200000) }] };
 }
 
+async function fetchAllowedStates(ha_url, ha_token, entitySet, domainSet) {
+  if (!ha_url || !ha_token) throw new Error('ha_url / ha_token im Add-on konfigurieren');
+  const r = await fetch(ha_url + '/api/states', {
+    headers: { Authorization: 'Bearer ' + ha_token },
+  });
+  if (!r.ok) throw new Error('HA /api/states HTTP ' + r.status);
+  const states = await r.json();
+  if (!Array.isArray(states)) throw new Error('Unerwartete HA-Antwort');
+  const rowsAll = [];
+  for (const s of states) {
+    const id = s.entity_id;
+    if (!id || !isEntityAllowed(id, entitySet, domainSet)) continue;
+    const att = s.attributes || {};
+    rowsAll.push({
+      entity_id: id,
+      state: s.state,
+      domain: String(id).split('.')[0],
+      friendly_name: att.friendly_name || id,
+    });
+  }
+  return rowsAll;
+}
+
 function createMcpServer(ctx) {
   const { ha_url, ha_token, entitySet, domainSet } = ctx;
   const server = new McpServer({
@@ -122,39 +145,74 @@ function createMcpServer(ctx) {
       description:
         'Listet HA-Entities mit entity_id, state, domain und friendly_name (gefiltert nach Add-on-Allowlist).',
       inputSchema: {
-        limit: z.number().int().min(1).max(500).optional().describe('Max. Anzahl (Standard 120)'),
+        limit: z.number().int().min(1).max(5000).optional().describe('Optionales Limit (ohne Angabe: alle)'),
+        offset: z.number().int().min(0).optional().describe('Optionaler Startindex für Paging (Standard 0)'),
       },
     },
-    async ({ limit }) => {
-      if (!ha_url || !ha_token) {
-        return textResult({ error: 'ha_url / ha_token im Add-on konfigurieren' });
-      }
-      const lim = limit != null ? limit : 120;
-      let states;
+    async ({ limit, offset }) => {
+      const off = offset != null ? offset : 0;
       try {
-        const r = await fetch(ha_url + '/api/states', {
-          headers: { Authorization: 'Bearer ' + ha_token },
+        const rowsAll = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
+        const total = rowsAll.length;
+        const rows = limit != null ? rowsAll.slice(off, off + limit) : rowsAll.slice(off);
+        return textResult({
+          total,
+          returned: rows.length,
+          offset: off,
+          limit: limit != null ? limit : null,
+          has_more: off + rows.length < total,
+          entities: rows,
         });
-        if (!r.ok) return textResult({ error: 'HA /api/states HTTP ' + r.status });
-        states = await r.json();
       } catch (e) {
         return textResult({ error: String(e.message || e) });
       }
-      if (!Array.isArray(states)) return textResult({ error: 'Unerwartete HA-Antwort' });
-      const rows = [];
-      for (const s of states) {
-        const id = s.entity_id;
-        if (!id || !isEntityAllowed(id, entitySet, domainSet)) continue;
-        const att = s.attributes || {};
-        rows.push({
-          entity_id: id,
-          state: s.state,
-          domain: String(id).split('.')[0],
-          friendly_name: att.friendly_name || id,
+    }
+  );
+
+  server.registerTool(
+    'search_entities',
+    {
+      description:
+        'Sucht gezielt in freigegebenen HA-Entities nach Text in entity_id/friendly_name sowie optional nach domain/state.',
+      inputSchema: {
+        query: z.string().optional().describe('Freitextsuche (z. B. c0.09, wohnzimmer, decke)'),
+        domain: z.string().optional().describe('Optionaler Domain-Filter (z. B. light, switch, lock)'),
+        state: z.string().optional().describe('Optionaler State-Filter (z. B. on, off, unavailable)'),
+        limit: z.number().int().min(1).max(5000).optional().describe('Max. Treffer (Standard 50)'),
+        offset: z.number().int().min(0).optional().describe('Startindex für Paging (Standard 0)'),
+      },
+    },
+    async ({ query, domain, state, limit, offset }) => {
+      const q = String(query || '').trim().toLowerCase();
+      const d = String(domain || '').trim().toLowerCase();
+      const s = String(state || '').trim().toLowerCase();
+      const lim = limit != null ? limit : 50;
+      const off = offset != null ? offset : 0;
+      try {
+        const rowsAll = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
+        const filtered = rowsAll.filter((r) => {
+          if (d && String(r.domain || '').toLowerCase() !== d) return false;
+          if (s && String(r.state || '').toLowerCase() !== s) return false;
+          if (!q) return true;
+          const id = String(r.entity_id || '').toLowerCase();
+          const fn = String(r.friendly_name || '').toLowerCase();
+          return id.includes(q) || fn.includes(q);
         });
-        if (rows.length >= lim) break;
+        const rows = filtered.slice(off, off + lim);
+        return textResult({
+          total: filtered.length,
+          returned: rows.length,
+          offset: off,
+          limit: lim,
+          has_more: off + rows.length < filtered.length,
+          query: q || null,
+          domain: d || null,
+          state: s || null,
+          entities: rows,
+        });
+      } catch (e) {
+        return textResult({ error: String(e.message || e) });
       }
-      return textResult({ count: rows.length, entities: rows });
     }
   );
 

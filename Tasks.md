@@ -59,6 +59,8 @@
 - [x] Add-on: MCP Streamable HTTP unter `/api/mcp` (gleicher Port wie UI/Host-Port); `@modelcontextprotocol/sdk`; `mcp_bearer_token` + Allowlists; Dockerfile `npm ci`
 - [x] FAB-Popup minimal vergrößert (Breite/Höhe leicht erhöht)
 - [x] App Empty-State: Prompt-Suggestions zentriert direkt unter dem HA-Logo positioniert
+- [x] MCP `list_entities`: ohne `limit` jetzt alle Entities; zusätzlich `total/returned/has_more` + optional `offset` für Paging
+- [x] MCP `search_entities`: gezielte Suche nach `query` (friendly_name/entity_id) + optionale Filter `domain`/`state`
 
 ## Nachfolgende Schritte
 
