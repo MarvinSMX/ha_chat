@@ -80,7 +80,8 @@
 
       /* ── Input-Bereich ── */
       .input-area { flex-shrink: 0; width: min(100%, 620px); margin: 0 auto; overflow: visible; }
-      .prompt-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; align-items: center; }
+      .prompt-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; align-items: center; justify-content: center; width: 100%; }
+      .empty-state .prompt-suggestions { margin-top: 10px; margin-bottom: 0; max-width: min(100%, 560px); }
       .prompt-suggestion { flex: 0 0 auto; padding: 5px 13px; background: transparent; border: 1px solid #3a3a3a; color: #aaa; border-radius: 16px; cursor: pointer; font-size: 0.83em; font-family: inherit; white-space: nowrap; transition: border-color .15s, color .15s; }
       .prompt-suggestion:hover { border-color: #009AC7; color: #009AC7; }
       .prompt-suggestion-more { flex: 0 0 auto; padding: 5px 10px; background: #2d2d2d; border: 1px solid #3a3a3a; color: #888; border-radius: 16px; font-size: 0.83em; font-family: inherit; cursor: pointer; }
@@ -681,6 +682,8 @@
       var threadEl = this.shadowRoot.getElementById('thread');
       var msgCol   = this.shadowRoot.getElementById('msg-col');
       var suggestEl = this.shadowRoot.getElementById('prompt-suggestions');
+      var inputArea = this.shadowRoot.querySelector('.input-area');
+      var inputWrap = this.shadowRoot.querySelector('.input-wrapper');
       var scrollBottom = threadEl.scrollHeight - threadEl.scrollTop - threadEl.clientHeight < 80;
       msgCol.innerHTML = '';
 
@@ -691,7 +694,11 @@
         var empty = document.createElement('div');
         empty.className = 'empty-state';
         empty.innerHTML = '<img src="' + escapeAttr(apiBase() + '/logo.svg') + '" alt="Home Assistant Logo">';
+        if (suggestEl) empty.appendChild(suggestEl);
         msgCol.appendChild(empty);
+      } else if (suggestEl && inputArea && suggestEl.parentNode !== inputArea) {
+        if (inputWrap) inputArea.insertBefore(suggestEl, inputWrap);
+        else inputArea.appendChild(suggestEl);
       }
 
       this._thread.forEach(function (m) {
