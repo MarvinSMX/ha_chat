@@ -11,6 +11,7 @@ const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/ser
 const { z } = require('zod');
 const WebSocket = require('ws');
 const MiniSearch = require('minisearch');
+const SEARCH_INDEX_CACHE_TTL_MS = 30000;
 
 function splitList(raw) {
   if (raw == null || raw === '') return [];
@@ -148,6 +149,23 @@ function buildSearchTermsForIndex(rawQuery) {
     .map(([term]) => term)
     .filter(Boolean);
   return Array.from(new Set(terms));
+}
+
+function buildRowsSignature(rows) {
+  const h = crypto.createHash('sha1');
+  for (const r of rows) {
+    h.update(String(r.entity_id || ''));
+    h.update('|');
+    h.update(String(r.friendly_name || ''));
+    h.update('|');
+    h.update(String(r.state || ''));
+    h.update('|');
+    h.update(String(r.domain || ''));
+    h.update('|');
+    h.update(String(r.area_id || ''));
+    h.update('\n');
+  }
+  return h.digest('hex');
 }
 
 function isEntityAllowed(entityId, entitySet, domainSet) {
@@ -441,6 +459,7 @@ function createMcpServer(ctx) {
     name: 'ha-chat-addon',
     version: '1.0.0',
   });
+  const searchIndexCache = new Map();
 
   const areaResolver = createAreaResolver(ha_url, ha_token, mcp_area_allowlist);
   const getEffectiveArea = (toolArea) => {
@@ -525,9 +544,10 @@ function createMcpServer(ctx) {
         area: z.string().optional().describe('Optionaler HA-Area-Filter (Name oder area_id)'),
         limit: z.number().int().min(1).max(5000).optional().describe('Max. Treffer (Standard 50)'),
         offset: z.number().int().min(0).optional().describe('Startindex für Paging (Standard 0)'),
+        top_k: z.number().int().min(1).max(5000).optional().describe('Anzahl der Top-Treffer aus dem Suchindex vor Paging (Standard max(limit+offset, 200)).'),
       },
     },
-    async ({ query, domain, state, area, limit, offset }) => {
+    async ({ query, domain, state, area, limit, offset, top_k }) => {
       const q = String(query || '').trim().toLowerCase();
       const d = String(domain || '').trim().toLowerCase();
       const s = String(state || '').trim().toLowerCase();
@@ -547,14 +567,42 @@ function createMcpServer(ctx) {
             .slice()
             .sort((a, b) => String(a.friendly_name || '').localeCompare(String(b.friendly_name || ''), 'de'));
         } else {
-          const index = createMiniSearchIndex(scopedRows);
           const terms = buildSearchTermsForIndex(q);
           if (!terms.length) {
             filtered = [];
           } else {
+            const cacheKey = JSON.stringify({
+              area: getEffectiveArea(area) || '',
+              domain: d || '',
+              state: s || '',
+            });
+            const sig = buildRowsSignature(scopedRows);
+            const now = Date.now();
+            const existing = searchIndexCache.get(cacheKey);
+            const canReuse =
+              !!(existing && existing.signature === sig && now - existing.createdAt < SEARCH_INDEX_CACHE_TTL_MS);
+            const entry = canReuse
+              ? existing
+              : {
+                  signature: sig,
+                  createdAt: now,
+                  index: createMiniSearchIndex(scopedRows),
+                };
+            if (!canReuse) searchIndexCache.set(cacheKey, entry);
+
+            // Opportunistische Cache-Bereinigung.
+            if (searchIndexCache.size > 32) {
+              for (const [k, v] of searchIndexCache.entries()) {
+                if (now - v.createdAt >= SEARCH_INDEX_CACHE_TTL_MS) searchIndexCache.delete(k);
+              }
+            }
+
             const queryString = terms.join(' ');
-            const hits = index.search(queryString);
-            filtered = hits.map((h) => ({
+            const hits = entry.index.search(queryString);
+            const topKRequested = top_k != null ? top_k : Math.max(200, off + lim);
+            const topK = Math.max(topKRequested, off + lim);
+            const limitedHits = hits.slice(0, topK);
+            filtered = limitedHits.map((h) => ({
               entity_id: h.entity_id,
               friendly_name: h.friendly_name,
               domain: h.domain,
@@ -570,6 +618,7 @@ function createMcpServer(ctx) {
           returned: rows.length,
           offset: off,
           limit: lim,
+          top_k: q ? (top_k != null ? Math.max(top_k, off + lim) : Math.max(200, off + lim)) : null,
           has_more: off + rows.length < filtered.length,
           query: q || null,
           domain: d || null,
