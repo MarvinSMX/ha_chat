@@ -73,6 +73,9 @@
 - [x] FAB PromptInputActions reduziert: nur Mikrofon + Senden (kein Plus, Search, Tools)
 - [x] FAB nochmals verschmälert (380px max) + CSS-Schutz: nur `#fab-voice` in Action-Row sichtbar
 - [x] Korrektur: Popup-Breite wiederhergestellt; nur Prompt-Input schmaler/zentriert gegen Rechts-Clip
+- [x] FAB-spezifischer `system_prompt` eingebaut (YAML), Server-Priorität: FAB-Prompt > Add-on-Default
+- [x] FAB Voice: Auto-Senden nach fertiger Transcription mit Debounce (700ms)
+- [x] FAB Voice: Duplikat-Fix bei Live-Transcription (stabile Basis + spoken-Text statt wiederholtem Anhängen)
 
 ## Nachfolgende Schritte
 

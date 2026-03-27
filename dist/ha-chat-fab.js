@@ -12,6 +12,7 @@
  *   title: Popup-Header + FAB-Tooltip (Standard: HA Chat)
  *   welcome_title, welcome_subtitle: Empty-State (optional)
  *   area_scope: optionaler Raum/Bereich (HA Area Name/ID) für N8N/MCP-Filter
+ *   system_prompt: optionaler FAB-spezifischer Prompt (überschreibt Add-on-Default)
  *   welcome_image_url: optional eigenes Bild statt eingebettetem Willkommens-Emoji (PNG)
  *   ha_bearer_token: optional Long-Lived Token (wie curl -H "Authorization: Bearer …")
  *   addon_direct_url: optional http(s)://host:PORT – umgeht HA-Ingress (wie Zircon3D-Workaround)
@@ -244,10 +245,10 @@
       .${POPUP_CLASS} .chat-img{display:block;max-width:100%;max-height:220px;border-radius:8px;object-fit:contain;opacity:0;transition:opacity .25s;}
       .${POPUP_CLASS} .img-wrapper.loaded .img-skeleton{display:none;}
       .${POPUP_CLASS} .img-wrapper.loaded .chat-img{opacity:1;}
-      .${POPUP_CLASS} .composer{flex-shrink:0;padding:8px 10px 10px;}
+      .${POPUP_CLASS} .composer{flex-shrink:0;padding:8px 10px 10px;display:flex;justify-content:center;}
       .${POPUP_CLASS} .composer-shell{
         cursor:text;
-        width:100%;
+        width:calc(100% - 10px);
         max-width:100%;
         box-sizing:border-box;
         border:1px solid #3a3a3a;
@@ -293,6 +294,7 @@
         scrollbar-width:none;
       }
       .${POPUP_CLASS} .composer-left::-webkit-scrollbar{display:none;}
+      .${POPUP_CLASS} .composer-left > :not(#fab-voice){display:none !important;}
       .${POPUP_CLASS} .composer-icon-btn{
         width:34px;height:34px;border-radius:999px;
         border:1px solid #3a3a3a;
@@ -398,6 +400,8 @@
       this._boundThreadClick = null;
       this._speechRec = null;
       this._speechListening = false;
+      this._voiceSendDebounceMs = 700;
+      this._voiceSendTimer = null;
       this.shadowRoot.innerHTML = `<style>:host{display:block;width:0;height:0;overflow:hidden;}</style>`;
     }
 
@@ -520,6 +524,18 @@
     _areaScope() {
       const c = this._config || {};
       const keys = ['area_scope', 'ha_area', 'area', 'room'];
+      for (let i = 0; i < keys.length; i++) {
+        const v = c[keys[i]];
+        if (typeof v !== 'string') continue;
+        const t = v.trim();
+        if (t) return t;
+      }
+      return '';
+    }
+
+    _fabSystemPrompt() {
+      const c = this._config || {};
+      const keys = ['system_prompt', 'fab_system_prompt', 'prompt'];
       for (let i = 0; i < keys.length; i++) {
         const v = c[keys[i]];
         if (typeof v !== 'string') continue;
@@ -964,6 +980,10 @@
       this._speechListening = false;
       const btn = this._popupEl && this._popupEl.querySelector('#fab-voice');
       if (btn) btn.setAttribute('data-active', 'false');
+      if (this._voiceSendTimer) {
+        clearTimeout(this._voiceSendTimer);
+        this._voiceSendTimer = null;
+      }
       if (this._speechRec) {
         try { this._speechRec.stop(); } catch (_) {}
         this._speechRec = null;
@@ -983,6 +1003,7 @@
       }
       const input = this._popupEl && this._popupEl.querySelector('#fab-input');
       if (!input) return;
+      const baseTextBeforeVoice = (input.value || '').trim();
       const rec = new SpeechRecognition();
       this._speechRec = rec;
       this._speechListening = true;
@@ -1001,12 +1022,17 @@
           if (ev.results[i].isFinal) finalText += txt;
           else interim += txt;
         }
-        const base = (input.value || '').trim();
-        const prefix = base ? base + ' ' : '';
-        input.value = (prefix + (finalText || interim)).trimStart();
+        const spoken = (finalText + interim).trim();
+        input.value = spoken
+          ? ((baseTextBeforeVoice ? baseTextBeforeVoice + ' ' : '') + spoken).trim()
+          : baseTextBeforeVoice;
         this._autoGrowComposerInput();
       };
       rec.onerror = (e) => {
+        if (this._voiceSendTimer) {
+          clearTimeout(this._voiceSendTimer);
+          this._voiceSendTimer = null;
+        }
         this._showStatus('', false);
         this._showError('Spracheingabe: ' + (e && e.error ? e.error : 'Fehler'));
       };
@@ -1016,6 +1042,15 @@
         this._showStatus('', false);
         this._autoGrowComposerInput();
         this._speechRec = null;
+        const txt = (input.value || '').trim();
+        if (!txt) return;
+        if (this._voiceSendTimer) clearTimeout(this._voiceSendTimer);
+        this._voiceSendTimer = setTimeout(() => {
+          this._voiceSendTimer = null;
+          const current = (input.value || '').trim();
+          if (!current) return;
+          this._send();
+        }, this._voiceSendDebounceMs);
       };
       try {
         rec.start();
@@ -1049,6 +1084,7 @@
           session_id: self._sessionId,
           chat_id: self._chatId,
           area_scope: self._areaScope() || undefined,
+          system_prompt: self._fabSystemPrompt() || undefined,
         }),
         signal: controller.signal,
       })
@@ -1101,6 +1137,7 @@
           session_id: self._sessionId,
           chat_id: self._chatId,
           area_scope: self._areaScope() || undefined,
+          system_prompt: self._fabSystemPrompt() || undefined,
         }),
       })
         .then((r) => parseJsonResponse(r))

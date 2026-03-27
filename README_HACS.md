@@ -109,6 +109,7 @@ title: Support-Bot
 welcome_title: Willkommen beim Support
 welcome_subtitle: Frag mich zu Geräten, Szenen oder der Dokumentation.
 area_scope: "C0.09"
+system_prompt: "Du bist der Assistent für 439 EG C0.09. Nutze nur Geräte in diesem Bereich."
 icon: mdi:chat
 ```
 
@@ -118,6 +119,7 @@ icon: mdi:chat
 - `addon_direct_url` / `direct_url` / `addon_port_url` – direkte Basis-URL zum Add-on (Ingress umgehen)
 - `welcome_image_url` – alternatives Bild für den Empty-State (sonst eingebettetes Standardbild)
 - `area_scope` / `ha_area` / `area` / `room` – Bereichsname oder `area_id`, wird an N8N weitergegeben (Room-Scope)
+- `system_prompt` / `fab_system_prompt` / `prompt` – FAB-spezifischer Prompt; hat Vorrang vor globalem Add-on-`system_prompt`
 - `zIndex` – z. B. `100000`
 
 ### Voice Commands (Web API)

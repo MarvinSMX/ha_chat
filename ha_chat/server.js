@@ -552,10 +552,11 @@ const server = http.createServer(async (req, res) => {
     appendMessage(userId, chatId, 'user', message);
     const opts = getOptions();
     const areaScope = typeof data.area_scope === 'string' ? data.area_scope.trim() : '';
+    const reqSystemPrompt = typeof data.system_prompt === 'string' ? data.system_prompt.trim() : '';
     const payload = {
       message,
       session_id: sessionId,
-      system_prompt: opts.system_prompt || DEFAULT_SYSTEM_PROMPT,
+      system_prompt: reqSystemPrompt || opts.system_prompt || DEFAULT_SYSTEM_PROMPT,
       area_scope: areaScope || undefined,
     };
     try {
@@ -701,10 +702,11 @@ const server = http.createServer(async (req, res) => {
     appendMessage(userId, chatId, 'user', utterance);
     const opts = getOptions();
     const areaScope = typeof data.area_scope === 'string' ? data.area_scope.trim() : '';
+    const reqSystemPrompt = typeof data.system_prompt === 'string' ? data.system_prompt.trim() : '';
     const actionPayload = {
       message: utterance,
       session_id: sessionId,
-      system_prompt: opts.system_prompt || DEFAULT_SYSTEM_PROMPT,
+      system_prompt: reqSystemPrompt || opts.system_prompt || DEFAULT_SYSTEM_PROMPT,
       area_scope: areaScope || undefined,
     };
     try {
