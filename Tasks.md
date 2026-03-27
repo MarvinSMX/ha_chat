@@ -102,6 +102,17 @@
 - [x] Hardcoded Intent-Mapping wieder entfernt; `search_entities` nutzt nur `domain`/`domains[]` (AI entscheidet Domain-Auswahl)
 - [x] `search_entities` vereinheitlicht: nur `domain` (String oder `domain[]`), separates `domains`-Feld entfernt
 - [x] Szenenerkennung verbessert: Embedding-Kontext aus HA-Attributen (`semantic_context`) ergänzt; API-Responses bleiben auf öffentliche Entity-Felder beschränkt
+- [x] Automations-Change-Engine ergänzt (`automation/change-engine.js`): Zielerkennung, Zeitplan-Diff, Apply
+- [x] Neue MCP-Write-Tools: `propose_automation_change`, `apply_automation_change`, `temporary_automation_override`
+- [x] Sicherheitsfluss umgesetzt: `change_id` + `confirmation_token`, TTL, Einmal-Anwendung, Konfliktcheck per Trigger-Hash
+- [x] Performance verbessert: kurzer Automations-Cache + State-Cache, Cache-Invalidierung nach Änderungen
+- [x] Temporäre Overrides persistent gespeichert (`/data/automation_overrides.json`) und bei Ablauf automatisch rückgesetzt
+- [x] Performance: kurzer In-Memory-State-Cache (TTL) für schnellere, aufeinanderfolgende MCP-Tool-Calls
+- [x] Klare Tool-Semantik ergänzt: `get_scenes`, `activate_scene`, `run_script`
+- [x] Suchbetrieb ergänzt: `search_health` und `rebuild_search_index`
+- [x] Reindex-Strategie verbessert: Signatur auf semantisch relevante Felder (`semantic_context`) statt volatilem Live-`state`
+- [x] Change-Engine auf strukturiertes Modell ohne sprachliche Heuristik/Schlagwörter umgestellt (`automation_id` + `set_time`/`shift_minutes`)
+- [x] MCP-Prompt bereinigt: keine hardcodierten Stichwortlisten mehr für Stimmungsbegriffe
 
 ## Nachfolgende Schritte
 

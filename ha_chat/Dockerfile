@@ -7,6 +7,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY www ./www
 COPY search ./search
+COPY automation ./automation
 COPY server.js mcp-handler.js faiss_index.py ./
 EXPOSE 8099
 CMD ["node", "server.js"]

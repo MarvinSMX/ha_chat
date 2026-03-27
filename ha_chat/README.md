@@ -81,11 +81,19 @@ Der Server bietet **Streamable HTTP** (stateless) unter **`/api/mcp`** – **der
 - Beide Felder gesetzt: eine Entity muss **beiden** Bedingungen genügen (ID in Liste **und** Domain erlaubt).
 - Leer lassen: alles, was das **HA-Token** darf.
 
-**Tools:** `list_entities`, `search_entities`, `get_entity_state`, `call_service` (bei eingeschränktem Zugriff mit `service_data.entity_id` als String oder Array). **Prompt:** `ha_chat_scoped_assistant`.
+**Tools:** `list_entities`, `get_scenes`, `activate_scene`, `run_script`, `search_entities`, `search_health`, `rebuild_search_index`, `propose_automation_change`, `apply_automation_change`, `temporary_automation_override`, `get_entity_state`, `call_service` (bei eingeschränktem Zugriff mit `service_data.entity_id` als String oder Array). **Prompt:** `ha_chat_scoped_assistant`.
 
 - `list_entities`: gibt ohne `limit` **alle** erlaubten Entities zurück (`total`, `returned`, `has_more`), optional `area`.
+- `get_scenes`: listet Szenen (`scene.*`) im Scope.
+- `activate_scene`: aktiviert eine Szene direkt (`scene.turn_on`).
+- `run_script`: startet ein Script direkt (`script.turn_on`).
 - `search_entities`: gezielte Suche über `query` (Name/Entity-ID), optional `domain` als String oder Array (`domain[]`), plus `state`, `area`, `limit`/`offset`.
 - `search_entities`: vollständige Entity-Indexierung im Scope, optional `top_k`; Retrieval läuft ausschließlich über Azure-Embeddings + lokalen FAISS-Dateiindex.
+- `search_health`: zeigt Such-/Indexstatus (FAISS/Embedding, Rebuild-Zeit, Count).
+- `rebuild_search_index`: erzwingt einen Rebuild des FAISS-Index für den Scope.
+- `propose_automation_change`: erstellt einen bestätigungspflichtigen Änderungsentwurf für bestehende Automationen.
+- `apply_automation_change`: wendet den bestätigten Änderungsentwurf mit `change_id` + `confirmation_token` an.
+- `temporary_automation_override`: setzt eine zeitlich begrenzte Ausnahme und reaktiviert die Automation automatisch.
 - `get_entity_state` / `call_service`: optionaler `area`-Parameter für zusätzlichen Room-Scope.
 - `call_service`: Ziel-Entities immer in `service_data.entity_id` übergeben (nicht auf Top-Level).
 - Area-/Registry-Auflösung erfolgt über Home-Assistant-WebSocket (`config/entity_registry/list`, `config/area_registry/list`).

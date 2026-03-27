@@ -6,11 +6,17 @@
 'use strict';
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { z } = require('zod');
 const WebSocket = require('ws');
 const { createEntitySearchService } = require('./search/entity-search.js');
+const { createAutomationChangeEngine } = require('./automation/change-engine.js');
+const STATES_CACHE_TTL_MS = 2000;
+const PENDING_CHANGE_TTL_MS = 15 * 60 * 1000;
+const OVERRIDES_PATH = path.join(process.env.DATA_DIR || '/data', 'automation_overrides.json');
 
 function splitList(raw) {
   if (raw == null || raw === '') return [];
@@ -94,6 +100,85 @@ function textResult(obj) {
   const s = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
   return { content: [{ type: 'text', text: s.slice(0, 200000) }] };
 }
+
+async function callHaService(ha_url, ha_token, domain, service, serviceData) {
+  const r = await fetch(
+    ha_url + '/api/services/' + encodeURIComponent(String(domain || '')) + '/' + encodeURIComponent(String(service || '')),
+    {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + ha_token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(serviceData || {}),
+    }
+  );
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + JSON.stringify(body).slice(0, 500));
+  return body;
+}
+
+async function callHaWsCommand(ha_url, ha_token, type, payload) {
+  const wsUrl = String(ha_url || '')
+    .replace(/^http:\/\//i, 'ws://')
+    .replace(/^https:\/\//i, 'wss://')
+    .replace(/\/$/, '') + '/api/websocket';
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(wsUrl);
+    const reqId = 1001;
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      try { ws.close(); } catch (_) {}
+      reject(new Error('Timeout beim HA-WebSocket-Kommando: ' + type));
+    }, 12000);
+    const finish = (err, result) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { ws.close(); } catch (_) {}
+      if (err) reject(err);
+      else resolve(result);
+    };
+    ws.on('error', (e) => finish(new Error('HA-WebSocket Fehler: ' + (e && e.message ? e.message : 'unknown'))));
+    ws.on('message', (raw) => {
+      let msg;
+      try { msg = JSON.parse(typeof raw === 'string' ? raw : raw.toString('utf8')); } catch (_) { return; }
+      if (msg && msg.type === 'auth_required') {
+        ws.send(JSON.stringify({ type: 'auth', access_token: ha_token }));
+        return;
+      }
+      if (msg && msg.type === 'auth_invalid') return finish(new Error('HA-WebSocket Auth ungültig'));
+      if (msg && msg.type === 'auth_ok') {
+        ws.send(JSON.stringify({ id: reqId, type, ...(payload || {}) }));
+        return;
+      }
+      if (!msg || msg.type !== 'result' || msg.id !== reqId) return;
+      if (!msg.success) return finish(new Error('HA-WebSocket Kommando fehlgeschlagen: ' + type));
+      finish(null, msg.result);
+    });
+  });
+}
+
+function loadOverrides() {
+  try {
+    const raw = fs.readFileSync(OVERRIDES_PATH, 'utf8');
+    const data = JSON.parse(raw);
+    return Array.isArray(data) ? data : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveOverrides(rows) {
+  try {
+    fs.mkdirSync(path.dirname(OVERRIDES_PATH), { recursive: true });
+    fs.writeFileSync(OVERRIDES_PATH, JSON.stringify(rows, null, 2), 'utf8');
+  } catch (_) {}
+}
+
+const pendingChanges = new Map();
 
 function buildSemanticContextFromAttributes(att) {
   if (!att || typeof att !== 'object') return '';
@@ -377,6 +462,17 @@ function createMcpServer(ctx) {
   });
 
   const areaResolver = createAreaResolver(ha_url, ha_token, mcp_area_allowlist);
+  let statesCache = { rows: null, at: 0 };
+  const getAllowedStatesCached = async () => {
+    const now = Date.now();
+    if (statesCache.rows && now - statesCache.at < STATES_CACHE_TTL_MS) return statesCache.rows;
+    const rows = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
+    statesCache = { rows, at: now };
+    return rows;
+  };
+  const clearAllowedStatesCache = () => {
+    statesCache = { rows: null, at: 0 };
+  };
   const getEffectiveArea = (toolArea) => {
     const forced = String(forced_area_scope || '').trim();
     if (forced) return forced;
@@ -386,6 +482,9 @@ function createMcpServer(ctx) {
     entitySet || domainSet || (typeof mcp_area_allowlist === 'string' && mcp_area_allowlist.trim()) || getEffectiveArea('')
       ? 'Nur freigegebene Entities/Domains/Areas (Add-on mcp_*_allowlist / optional URL-scope).'
       : 'Alle Entities, die das konfigurierte HA-Token darf.';
+  const automationEngine = createAutomationChangeEngine({
+    callWs: async (type, payload) => callHaWsCommand(ha_url, ha_token, type, payload),
+  });
   const entitySearch = createEntitySearchService({
     embeddingTopK: mcp_search_embeddings_top_k,
     faissEnabled: mcp_search_faiss_enabled !== false,
@@ -397,10 +496,40 @@ function createMcpServer(ctx) {
       apiVersion: azure_openai_api_version || '2024-02-15-preview',
     },
     fetchScopedRows: async (area) => {
-      const rowsRaw = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
+      const rowsRaw = await getAllowedStatesCached();
       return areaResolver.filterRows(rowsRaw, getEffectiveArea(area));
     },
   });
+
+  const cleanupPendingChanges = () => {
+    const now = Date.now();
+    for (const [k, v] of pendingChanges.entries()) {
+      if (!v || now - v.createdAt > PENDING_CHANGE_TTL_MS || v.used) pendingChanges.delete(k);
+    }
+  };
+
+  const processExpiredOverrides = async () => {
+    const rows = loadOverrides();
+    if (!rows.length) return;
+    const now = Date.now();
+    const keep = [];
+    for (const ov of rows) {
+      const untilTs = Number(ov && ov.until_ts ? ov.until_ts : 0);
+      const entityId = String(ov && ov.entity_id ? ov.entity_id : '').trim();
+      if (!entityId || !untilTs) continue;
+      if (untilTs > now) {
+        keep.push(ov);
+        continue;
+      }
+      try {
+        await callHaService(ha_url, ha_token, 'automation', 'turn_on', { entity_id: entityId });
+      } catch (_) {
+        keep.push(ov);
+      }
+    }
+    saveOverrides(keep);
+  };
+  processExpiredOverrides().catch(() => {});
 
   server.registerPrompt(
     'ha_chat_scoped_assistant',
@@ -417,12 +546,12 @@ function createMcpServer(ctx) {
             text:
               'Du bist der Home-Assistant-FAB-Assistent für das Café-Dashboard der RTO GmbH. ' +
               'Arbeite strikt tool-gestützt, faktenbasiert und kurz. ' +
-              'Du steuerst Home Assistant nur über die Tools list_entities, search_entities, get_entity_state und call_service. ' +
+              'Du steuerst Home Assistant nur über die Tools list_entities, search_entities, get_scenes, activate_scene, run_script, propose_automation_change, apply_automation_change, temporary_automation_override, get_entity_state und call_service. ' +
               scopeHint +
               ' Ermittle den Geltungsbereich über verfügbare MCP-Entities, nicht über Annahmen. ' +
               'Für call_service gilt strikt: Nutze immer domain, service, optional area und service_data. ' +
               'entity_id darf niemals auf Top-Level stehen, sondern nur in service_data.entity_id (String oder Array). ' +
-              'Bei Stimmungswörtern wie bunt, warmweiss, kaltweiss, ambiente oder buffet suche zuerst in passenden Domains per search_entities (domain kann String oder Array sein), z. B. scene/script/automation/light, und bevorzuge Szenen/Skripte vor Einzel-Lampensteuerung. ' +
+              ' Nutze bevorzugt die semantischen Tools get_scenes, activate_scene und run_script für Szenen-/Stimmungswünsche. ' +
               'Wenn kein passendes Gerät im MCP-Scope verfügbar ist, melde das klar und steuere nichts außerhalb des Scopes. ' +
               'Bei mehreren Treffern: kurze Rückfrage statt raten. Keine erfundenen Entities.',
           },
@@ -445,7 +574,7 @@ function createMcpServer(ctx) {
     async ({ limit, offset, area }) => {
       const off = offset != null ? offset : 0;
       try {
-        const rowsRaw = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
+        const rowsRaw = await getAllowedStatesCached();
         const rowsAll = await areaResolver.filterRows(rowsRaw, getEffectiveArea(area));
         const total = rowsAll.length;
         const pageRows = limit != null ? rowsAll.slice(off, off + limit) : rowsAll.slice(off);
@@ -458,6 +587,137 @@ function createMcpServer(ctx) {
           has_more: off + rows.length < total,
           entities: rows,
         });
+      } catch (e) {
+        return textResult({ error: String(e.message || e) });
+      }
+    }
+  );
+
+  server.registerTool(
+    'get_scenes',
+    {
+      description: 'Listet verfügbare Szene-Entities (Domain scene) im erlaubten Scope.',
+      inputSchema: {
+        area: z.string().optional().describe('Optionaler HA-Area-Filter (Name oder area_id)'),
+        limit: z.number().int().min(1).max(5000).optional().describe('Optionales Limit (Standard 200)'),
+        offset: z.number().int().min(0).optional().describe('Optionaler Startindex (Standard 0)'),
+      },
+    },
+    async ({ area, limit, offset }) => {
+      const lim = limit != null ? limit : 200;
+      const off = offset != null ? offset : 0;
+      try {
+        const rowsRaw = await getAllowedStatesCached();
+        const rowsAll = (await areaResolver.filterRows(rowsRaw, getEffectiveArea(area)))
+          .filter((r) => String(r.domain || '').toLowerCase() === 'scene')
+          .map(toPublicEntityRow);
+        const rows = rowsAll.slice(off, off + lim);
+        return textResult({
+          total: rowsAll.length,
+          returned: rows.length,
+          offset: off,
+          limit: lim,
+          has_more: off + rows.length < rowsAll.length,
+          entities: rows,
+        });
+      } catch (e) {
+        return textResult({ error: String(e.message || e) });
+      }
+    }
+  );
+
+  server.registerTool(
+    'activate_scene',
+    {
+      description: 'Aktiviert eine Szene über scene.turn_on mit service_data.entity_id.',
+      inputSchema: {
+        entity_id: z.string().describe('Scene-Entity, z. B. scene.441_eg_b0_08_szene_bunt'),
+        area: z.string().optional().describe('Optionaler HA-Area-Filter (Name oder area_id)'),
+      },
+    },
+    async ({ entity_id, area }) => {
+      const id = String(entity_id || '').trim();
+      if (!ha_url || !ha_token) return textResult({ error: 'ha_url / ha_token im Add-on konfigurieren' });
+      if (!isEntityAllowed(id, entitySet, domainSet)) return textResult({ error: 'Entity nicht freigegeben oder ungültig: ' + id });
+      try {
+        const data = { entity_id: id };
+        await assertServiceDataAllowed(data, entitySet, domainSet, areaResolver, getEffectiveArea(area));
+        const r = await fetch(ha_url + '/api/services/scene/turn_on', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + ha_token, 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) return textResult({ error: 'HTTP ' + r.status, ha_response: body });
+        clearAllowedStatesCache();
+        return textResult({ ok: true, result: body });
+      } catch (e) {
+        return textResult({ error: String(e.message || e) });
+      }
+    }
+  );
+
+  server.registerTool(
+    'run_script',
+    {
+      description: 'Startet ein Script über script.turn_on mit service_data.entity_id.',
+      inputSchema: {
+        entity_id: z.string().describe('Script-Entity, z. B. script.buffet_szene_mit_spots_aus'),
+        area: z.string().optional().describe('Optionaler HA-Area-Filter (Name oder area_id)'),
+      },
+    },
+    async ({ entity_id, area }) => {
+      const id = String(entity_id || '').trim();
+      if (!ha_url || !ha_token) return textResult({ error: 'ha_url / ha_token im Add-on konfigurieren' });
+      if (!isEntityAllowed(id, entitySet, domainSet)) return textResult({ error: 'Entity nicht freigegeben oder ungültig: ' + id });
+      try {
+        const data = { entity_id: id };
+        await assertServiceDataAllowed(data, entitySet, domainSet, areaResolver, getEffectiveArea(area));
+        const r = await fetch(ha_url + '/api/services/script/turn_on', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + ha_token, 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) return textResult({ error: 'HTTP ' + r.status, ha_response: body });
+        clearAllowedStatesCache();
+        return textResult({ ok: true, result: body });
+      } catch (e) {
+        return textResult({ error: String(e.message || e) });
+      }
+    }
+  );
+
+  server.registerTool(
+    'search_health',
+    {
+      description: 'Liefert Gesundheits- und Indexstatusdaten der Embedding/FAISS-Suche.',
+      inputSchema: {
+        area: z.string().optional().describe('Optionaler HA-Area-Filter (Name oder area_id)'),
+      },
+    },
+    async ({ area }) => {
+      try {
+        const result = await entitySearch.health({ area: getEffectiveArea(area) });
+        return textResult(result);
+      } catch (e) {
+        return textResult({ error: String(e.message || e) });
+      }
+    }
+  );
+
+  server.registerTool(
+    'rebuild_search_index',
+    {
+      description: 'Erzwingt Rebuild des FAISS-Index für den aktuellen Scope/Area.',
+      inputSchema: {
+        area: z.string().optional().describe('Optionaler HA-Area-Filter (Name oder area_id)'),
+      },
+    },
+    async ({ area }) => {
+      try {
+        const result = await entitySearch.rebuild({ area: getEffectiveArea(area) });
+        return textResult(result);
       } catch (e) {
         return textResult({ error: String(e.message || e) });
       }
@@ -494,6 +754,132 @@ function createMcpServer(ctx) {
           result.entities = result.entities.map(toPublicEntityRow);
         }
         return textResult(result);
+      } catch (e) {
+        return textResult({ error: String(e.message || e) });
+      }
+    }
+  );
+
+  server.registerTool(
+    'propose_automation_change',
+    {
+      description:
+        'Erzeugt einen bestätigungspflichtigen Automations-Änderungsvorschlag auf Basis expliziter Parameter (ohne Heuristik).',
+      inputSchema: {
+        automation_id: z.string().describe('Konkrete Zielautomation (automation_id oder id)'),
+        set_time: z.string().optional().describe('Optional: neue Trigger-Zeit HH:MM oder HH:MM:SS'),
+        shift_minutes: z.number().int().min(-720).max(720).optional().describe('Optional: Zeitverschiebung in Minuten (+/-)'),
+      },
+    },
+    async ({ automation_id, set_time, shift_minutes }) => {
+      try {
+        cleanupPendingChanges();
+        const proposal = await automationEngine.proposeChange({ automation_id, set_time, shift_minutes });
+        if (!proposal || !proposal.found) return textResult(proposal || { found: false });
+        if (!proposal.changed) {
+          return textResult({
+            found: true,
+            changed: false,
+            message: 'Keine konkrete Trigger-Änderung erkannt. Bitte Zeit/Änderung präzisieren.',
+            automation: proposal.automation,
+            current_triggers: proposal.current_triggers,
+          });
+        }
+        const changeId = crypto.randomUUID();
+        const confirmationToken = crypto.randomBytes(16).toString('hex');
+        pendingChanges.set(changeId, {
+          createdAt: Date.now(),
+          used: false,
+          confirmationToken,
+          proposal,
+        });
+        return textResult({
+          found: true,
+          changed: true,
+          change_id: changeId,
+          confirmation_token: confirmationToken,
+          expires_in_seconds: Math.floor(PENDING_CHANGE_TTL_MS / 1000),
+          automation: proposal.automation,
+          reason: proposal.reason,
+          current_triggers: proposal.current_triggers,
+          proposed_triggers: proposal.proposed_triggers,
+        });
+      } catch (e) {
+        return textResult({ error: String(e.message || e) });
+      }
+    }
+  );
+
+  server.registerTool(
+    'apply_automation_change',
+    {
+      description: 'Wendet einen zuvor vorgeschlagenen Automations-Change nach expliziter Bestätigung an.',
+      inputSchema: {
+        change_id: z.string().describe('ID aus propose_automation_change'),
+        confirmation_token: z.string().describe('Bestätigungstoken aus propose_automation_change'),
+      },
+    },
+    async ({ change_id, confirmation_token }) => {
+      try {
+        cleanupPendingChanges();
+        const entry = pendingChanges.get(String(change_id || '').trim());
+        if (!entry) return textResult({ error: 'Unbekannte oder abgelaufene change_id' });
+        if (entry.used) return textResult({ error: 'Change wurde bereits angewendet' });
+        if (String(entry.confirmationToken) !== String(confirmation_token || '').trim()) {
+          return textResult({ error: 'confirmation_token ungültig' });
+        }
+        const p = entry.proposal || {};
+        const result = await automationEngine.applyChange({
+          automation_id: p.automation && p.automation.automation_id,
+          proposed_triggers: p.proposed_triggers,
+          expected_current_hash: p.current_hash,
+        });
+        entry.used = true;
+        pendingChanges.set(String(change_id), entry);
+        clearAllowedStatesCache();
+        return textResult({ ok: true, applied: result });
+      } catch (e) {
+        return textResult({ error: String(e.message || e) });
+      }
+    }
+  );
+
+  server.registerTool(
+    'temporary_automation_override',
+    {
+      description:
+        'Setzt eine temporäre Ausnahme für eine Automation (z. B. heute nicht ausführen), mit automatischer Rückaktivierung.',
+      inputSchema: {
+        entity_id: z.string().describe('Automation-Entity, z. B. automation.buffet_licht_abschalten'),
+        duration_minutes: z.number().int().min(1).max(1440).optional().describe('Dauer der Ausnahme in Minuten (Standard 180)'),
+        reason: z.string().optional().describe('Optionaler Grund für Audit'),
+      },
+    },
+    async ({ entity_id, duration_minutes, reason }) => {
+      const id = String(entity_id || '').trim();
+      const mins = duration_minutes != null ? duration_minutes : 180;
+      if (!ha_url || !ha_token) return textResult({ error: 'ha_url / ha_token im Add-on konfigurieren' });
+      if (!isEntityAllowed(id, entitySet, domainSet)) return textResult({ error: 'Entity nicht freigegeben oder ungültig: ' + id });
+      try {
+        await assertServiceDataAllowed({ entity_id: id }, entitySet, domainSet, areaResolver, getEffectiveArea(''));
+        const untilTs = Date.now() + mins * 60 * 1000;
+        await callHaService(ha_url, ha_token, 'automation', 'turn_off', { entity_id: id, stop_actions: false });
+        const current = loadOverrides();
+        const rows = current.filter((x) => String(x.entity_id || '') !== id);
+        rows.push({
+          entity_id: id,
+          until_ts: untilTs,
+          reason: String(reason || '').trim() || null,
+          created_at: Date.now(),
+        });
+        saveOverrides(rows);
+        clearAllowedStatesCache();
+        return textResult({
+          ok: true,
+          entity_id: id,
+          override_until: new Date(untilTs).toISOString(),
+          duration_minutes: mins,
+        });
       } catch (e) {
         return textResult({ error: String(e.message || e) });
       }
@@ -578,6 +964,7 @@ function createMcpServer(ctx) {
         });
         const body = await r.json().catch(() => ({}));
         if (!r.ok) return textResult({ error: 'HTTP ' + r.status, ha_response: body });
+        clearAllowedStatesCache();
         return textResult({ ok: true, result: body });
       } catch (e) {
         return textResult({ error: String(e.message || e) });

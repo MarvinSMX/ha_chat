@@ -19,11 +19,11 @@ function buildRowsSignature(rows) {
     h.update('|');
     h.update(String(r.friendly_name || ''));
     h.update('|');
-    h.update(String(r.state || ''));
-    h.update('|');
     h.update(String(r.domain || ''));
     h.update('|');
     h.update(String(r.area_id || ''));
+    h.update('|');
+    h.update(String(r.semantic_context || ''));
     h.update('\n');
   }
   return h.digest('hex');
@@ -161,7 +161,7 @@ function createEntitySearchService(config) {
     return entry;
   }
 
-  async function ensureFaissIndex(scopeKey, rows) {
+  async function ensureFaissIndex(scopeKey, rows, forceRebuild) {
     if (!faissEnabled) return null;
     const rowsById = new Map(rows.map((r) => [String(r.entity_id), r]));
     const signature = buildRowsSignature(rows);
@@ -176,7 +176,7 @@ function createEntitySearchService(config) {
       state = JSON.parse(await fs.promises.readFile(stateFile, 'utf8'));
     } catch (_) {}
 
-    const reuse = !!(state && state.signature === signature && fs.existsSync(indexFile) && fs.existsSync(metaFile));
+    const reuse = !forceRebuild && !!(state && state.signature === signature && fs.existsSync(indexFile) && fs.existsSync(metaFile));
     if (!reuse) {
       const emb = await prepareEmbeddingsForRows('faiss:' + scopeKey, rows);
       const tmp = await writeJsonTempFile('ha-faiss-build-', {
@@ -195,6 +195,10 @@ function createEntitySearchService(config) {
       }
     }
     return { indexFile, metaFile, rowsById };
+  }
+
+  function scopeKeyForArea(area) {
+    return JSON.stringify({ area: String(area || '').trim(), mode: 'faiss_scope_v2' });
   }
 
   async function search(params) {
@@ -233,8 +237,8 @@ function createEntitySearchService(config) {
         );
       }
       const queryText = q;
-      const scopeKey = JSON.stringify({ area, mode: 'faiss_scope_v2' });
-      const faiss = await ensureFaissIndex(scopeKey, searchBaseRows);
+      const scopeKey = scopeKeyForArea(area);
+      const faiss = await ensureFaissIndex(scopeKey, searchBaseRows, false);
       if (!faiss) {
         filtered = [];
       } else {
@@ -278,7 +282,40 @@ function createEntitySearchService(config) {
     };
   }
 
-  return { search, embeddingConfigured };
+  async function rebuild(params) {
+    const area = String((params && params.area) || '').trim();
+    const rowsAll = await fetchScopedRows(area);
+    const scopeKey = scopeKeyForArea(area);
+    const faiss = await ensureFaissIndex(scopeKey, rowsAll.slice(), true);
+    return {
+      ok: true,
+      area: area || null,
+      indexed_entities: rowsAll.length,
+      index_ready: !!faiss,
+    };
+  }
+
+  async function health(params) {
+    const area = String((params && params.area) || '').trim();
+    const scopeKey = scopeKeyForArea(area);
+    const nameHash = crypto.createHash('sha1').update(scopeKey).digest('hex');
+    const indexFile = path.join(faissIndexDir, `${nameHash}.faiss`);
+    const metaFile = path.join(faissIndexDir, `${nameHash}.meta.json`);
+    const stateFile = path.join(faissIndexDir, `${nameHash}.state.json`);
+    let state = null;
+    try { state = JSON.parse(await fs.promises.readFile(stateFile, 'utf8')); } catch (_) {}
+    return {
+      embedding_configured: embeddingConfigured,
+      faiss_enabled: faissEnabled,
+      faiss_index_dir: faissIndexDir,
+      area: area || null,
+      index_files_present: fs.existsSync(indexFile) && fs.existsSync(metaFile),
+      last_rebuild_at: state && state.updated_at ? state.updated_at : null,
+      indexed_entities: state && state.count ? state.count : null,
+    };
+  }
+
+  return { search, rebuild, health, embeddingConfigured };
 }
 
 module.exports = { createEntitySearchService };
