@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { z } = require('zod');
+const WebSocket = require('ws');
 
 function splitList(raw) {
   if (raw == null || raw === '') return [];
@@ -121,10 +122,6 @@ async function fetchRegistriesViaWebSocket(ha_url, ha_token) {
     .replace(/^https:\/\//i, 'wss://')
     .replace(/\/$/, '') + '/api/websocket';
 
-  if (typeof WebSocket === 'undefined') {
-    throw new Error('WebSocket API in Node nicht verfügbar');
-  }
-
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
     const reqEntityId = 101;
@@ -156,13 +153,13 @@ async function fetchRegistriesViaWebSocket(ha_url, ha_token) {
 
     timer = setTimeout(() => fail(new Error('Timeout beim HA-WebSocket-Registryzugriff')), 12000);
 
-    ws.addEventListener('error', (e) => fail(new Error('HA-WebSocket Fehler: ' + (e.message || 'unknown'))));
-    ws.addEventListener('close', () => {
+    ws.on('error', (e) => fail(new Error('HA-WebSocket Fehler: ' + (e && e.message ? e.message : 'unknown'))));
+    ws.on('close', () => {
       if (!done) fail(new Error('HA-WebSocket unerwartet geschlossen'));
     });
-    ws.addEventListener('message', (ev) => {
+    ws.on('message', (raw) => {
       let msg;
-      try { msg = JSON.parse(typeof ev.data === 'string' ? ev.data : String(ev.data)); } catch (_) { return; }
+      try { msg = JSON.parse(typeof raw === 'string' ? raw : raw.toString('utf8')); } catch (_) { return; }
       const t = msg && msg.type;
       if (t === 'auth_required') {
         ws.send(JSON.stringify({ type: 'auth', access_token: ha_token }));
