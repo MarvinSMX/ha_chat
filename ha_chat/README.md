@@ -84,7 +84,7 @@ Der Server bietet **Streamable HTTP** (stateless) unter **`/api/mcp`** – **der
 **Tools:** `list_entities`, `search_entities`, `get_entity_state`, `call_service` (bei eingeschränktem Zugriff mit `service_data.entity_id` als String oder Array). **Prompt:** `ha_chat_scoped_assistant`.
 
 - `list_entities`: gibt ohne `limit` **alle** erlaubten Entities zurück (`total`, `returned`, `has_more`), optional `area`.
-- `search_entities`: gezielte Suche über `query` (Name/Entity-ID), optional `domain`, `state`, `area`, plus `limit`/`offset`.
+- `search_entities`: gezielte Suche über `query` (Name/Entity-ID), optional `domain` als String oder Array (`domain[]`), plus `state`, `area`, `limit`/`offset`.
 - `search_entities`: vollständige Entity-Indexierung im Scope, optional `top_k`; Retrieval läuft ausschließlich über Azure-Embeddings + lokalen FAISS-Dateiindex.
 - `get_entity_state` / `call_service`: optionaler `area`-Parameter für zusätzlichen Room-Scope.
 - `call_service`: Ziel-Entities immer in `service_data.entity_id` übergeben (nicht auf Top-Level).

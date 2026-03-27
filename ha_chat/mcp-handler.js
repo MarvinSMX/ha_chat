@@ -432,7 +432,7 @@ function createMcpServer(ctx) {
         'Sucht gezielt in freigegebenen HA-Entities via Embedding-Retrieval (Azure OpenAI + lokaler FAISS-Dateiindex).',
       inputSchema: {
         query: z.string().optional().describe('Freitextsuche (z. B. c0.09, wohnzimmer, decke)'),
-        domain: z.string().optional().describe('Optionaler Domain-Filter (z. B. light, switch, lock)'),
+        domain: z.union([z.string(), z.array(z.string())]).optional().describe('Optionaler Domain-Filter als String oder Array (z. B. "light" oder ["light","scene","script"]).'),
         state: z.string().optional().describe('Optionaler State-Filter (z. B. on, off, unavailable)'),
         area: z.string().optional().describe('Optionaler HA-Area-Filter (Name oder area_id)'),
         limit: z.number().int().min(1).max(5000).optional().describe('Max. Treffer (Standard 50)'),

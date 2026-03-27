@@ -198,11 +198,23 @@ function createEntitySearchService(config) {
 
   async function search(params) {
     const q = String(params.query || '').trim().toLowerCase();
-    const d = String(params.domain || '').trim().toLowerCase();
+    const domainInput = params.domain;
+    const domainItems = Array.isArray(domainInput) ? domainInput : (domainInput != null && domainInput !== '' ? [domainInput] : []);
     const s = String(params.state || '').trim().toLowerCase();
     const lim = params.limit != null ? params.limit : 50;
     const off = params.offset != null ? params.offset : 0;
     const area = String(params.area || '').trim();
+
+    const domainSet = new Set();
+    for (const x of domainItems) {
+      const v = String(x || '').trim().toLowerCase();
+      if (v) domainSet.add(v);
+    }
+    const hasDomainFilter = domainSet.size > 0;
+    const domainMatches = (row) => {
+      if (!hasDomainFilter) return true;
+      return domainSet.has(String(row.domain || '').toLowerCase());
+    };
 
     const rowsAll = await fetchScopedRows(area);
     const searchBaseRows = rowsAll.slice();
@@ -210,7 +222,7 @@ function createEntitySearchService(config) {
 
     if (!q) {
       filtered = searchBaseRows
-        .filter((r) => (!d || String(r.domain || '').toLowerCase() === d) && (!s || String(r.state || '').toLowerCase() === s))
+        .filter((r) => domainMatches(r) && (!s || String(r.state || '').toLowerCase() === s))
         .slice()
         .sort((a, b) => String(a.friendly_name || '').localeCompare(String(b.friendly_name || ''), 'de'));
     } else {
@@ -241,7 +253,7 @@ function createEntitySearchService(config) {
           if (!id) continue;
           const row = faiss.rowsById.get(id);
           if (!row) continue;
-          if (d && String(row.domain || '').toLowerCase() !== d) continue;
+          if (!domainMatches(row)) continue;
           if (s && String(row.state || '').toLowerCase() !== s) continue;
           filtered.push(row);
         }
@@ -257,7 +269,7 @@ function createEntitySearchService(config) {
       top_k: q ? (params.top_k != null ? Math.max(params.top_k, off + lim) : Math.max(getEmbeddingTopKDefault(), off + lim)) : null,
       has_more: off + rows.length < filtered.length,
       query: q || null,
-      domain: d || null,
+      domain: hasDomainFilter ? Array.from(domainSet) : null,
       state: s || null,
       area: area || null,
       retrieval_mode: q ? 'faiss' : 'list_sorted',

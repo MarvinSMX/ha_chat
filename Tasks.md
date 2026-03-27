@@ -98,6 +98,9 @@
 - [x] Dockerfile ergänzt: `search/`-Verzeichnis wird in den Container kopiert
 - [x] Search-Bereinigung auf Classic-RAG: Synonym-/Tokenize-Query-Expansion aus `search/entity-search.js` entfernt (nur Raw-Query-Embedding + FAISS)
 - [x] Docker-PEP668-Fix: Python-venv (`/opt/pyenv`) für `faiss-cpu`/`numpy` genutzt, Worker nutzt `PYTHON_BIN` (Default `/opt/pyenv/bin/python`)
+- [x] `search_entities` erweitert: `domains[]` + `intent`-Mapping (z. B. `licht` => `light/scene/script/automation/switch`) bei FAISS-Retrieval
+- [x] Hardcoded Intent-Mapping wieder entfernt; `search_entities` nutzt nur `domain`/`domains[]` (AI entscheidet Domain-Auswahl)
+- [x] `search_entities` vereinheitlicht: nur `domain` (String oder `domain[]`), separates `domains`-Feld entfernt
 
 ## Nachfolgende Schritte
 
