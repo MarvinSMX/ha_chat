@@ -115,6 +115,85 @@ async function fetchAllowedStates(ha_url, ha_token, entitySet, domainSet) {
   return rowsAll;
 }
 
+async function fetchRegistriesViaWebSocket(ha_url, ha_token) {
+  const wsUrl = String(ha_url || '')
+    .replace(/^http:\/\//i, 'ws://')
+    .replace(/^https:\/\//i, 'wss://')
+    .replace(/\/$/, '') + '/api/websocket';
+
+  if (typeof WebSocket === 'undefined') {
+    throw new Error('WebSocket API in Node nicht verfügbar');
+  }
+
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(wsUrl);
+    const reqEntityId = 101;
+    const reqAreaId = 102;
+    let done = false;
+    let authed = false;
+    let entities = null;
+    let areas = null;
+    let timer = null;
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      try { ws.close(); } catch (_) {}
+    };
+    const fail = (err) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(err instanceof Error ? err : new Error(String(err)));
+    };
+    const succeed = () => {
+      if (done) return;
+      if (!Array.isArray(entities) || !Array.isArray(areas)) return;
+      done = true;
+      cleanup();
+      resolve({ entities, areas });
+    };
+
+    timer = setTimeout(() => fail(new Error('Timeout beim HA-WebSocket-Registryzugriff')), 12000);
+
+    ws.addEventListener('error', (e) => fail(new Error('HA-WebSocket Fehler: ' + (e.message || 'unknown'))));
+    ws.addEventListener('close', () => {
+      if (!done) fail(new Error('HA-WebSocket unerwartet geschlossen'));
+    });
+    ws.addEventListener('message', (ev) => {
+      let msg;
+      try { msg = JSON.parse(typeof ev.data === 'string' ? ev.data : String(ev.data)); } catch (_) { return; }
+      const t = msg && msg.type;
+      if (t === 'auth_required') {
+        ws.send(JSON.stringify({ type: 'auth', access_token: ha_token }));
+        return;
+      }
+      if (t === 'auth_invalid') {
+        fail(new Error('HA-WebSocket Auth ungültig'));
+        return;
+      }
+      if (t === 'auth_ok') {
+        authed = true;
+        ws.send(JSON.stringify({ id: reqEntityId, type: 'config/entity_registry/list' }));
+        ws.send(JSON.stringify({ id: reqAreaId, type: 'config/area_registry/list' }));
+        return;
+      }
+      if (!authed || t !== 'result') return;
+      if (msg.id === reqEntityId) {
+        if (!msg.success) return fail(new Error('config/entity_registry/list fehlgeschlagen'));
+        entities = msg.result;
+        succeed();
+        return;
+      }
+      if (msg.id === reqAreaId) {
+        if (!msg.success) return fail(new Error('config/area_registry/list fehlgeschlagen'));
+        areas = msg.result;
+        succeed();
+      }
+    });
+  });
+}
+
 function createAreaResolver(ha_url, ha_token, globalAreaAllowlistRaw) {
   let cachePromise = null;
   const hasGlobalScope = splitList(globalAreaAllowlistRaw).length > 0;
@@ -122,21 +201,42 @@ function createAreaResolver(ha_url, ha_token, globalAreaAllowlistRaw) {
   async function loadRegistries() {
     if (cachePromise) return cachePromise;
     cachePromise = (async () => {
+      let entities;
+      let areas;
       const [entityRes, areaRes] = await Promise.all([
         fetch(ha_url + '/api/config/entity_registry', { headers: { Authorization: 'Bearer ' + ha_token } }),
         fetch(ha_url + '/api/config/area_registry', { headers: { Authorization: 'Bearer ' + ha_token } }),
       ]);
       if (!entityRes.ok || !areaRes.ok) {
-        throw new Error(
-          'HA-Registry-Zugriff fehlgeschlagen (entity_registry=' +
-            entityRes.status +
-            ', area_registry=' +
-            areaRes.status +
-            ')'
-        );
+        // Deterministischer Fallback auf offizielle HA-WebSocket-Kommandos, falls REST-Registries nicht verfügbar sind.
+        if (entityRes.status === 404 || areaRes.status === 404) {
+          try {
+            const wsData = await fetchRegistriesViaWebSocket(ha_url, ha_token);
+            entities = wsData.entities;
+            areas = wsData.areas;
+          } catch (wsErr) {
+            throw new Error(
+              'HA-Registry-Zugriff fehlgeschlagen (entity_registry=' +
+                entityRes.status +
+                ', area_registry=' +
+                areaRes.status +
+                '), WS-Fallback fehlgeschlagen: ' +
+                (wsErr && wsErr.message ? wsErr.message : String(wsErr))
+            );
+          }
+        } else {
+          throw new Error(
+            'HA-Registry-Zugriff fehlgeschlagen (entity_registry=' +
+              entityRes.status +
+              ', area_registry=' +
+              areaRes.status +
+              ')'
+          );
+        }
+      } else {
+        entities = await entityRes.json();
+        areas = await areaRes.json();
       }
-      const entities = await entityRes.json();
-      const areas = await areaRes.json();
       const entityToAreaId = new Map();
       const areaIdToName = new Map();
       const tokenToAreaIds = new Map();
