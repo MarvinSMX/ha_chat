@@ -85,9 +85,6 @@
 - [x] MCP `search_entities` auf produktionsnahe Suchbibliothek umgestellt (`minisearch`, BM25/Fuzzy, gewichtete Felder)
 - [x] MCP `search_entities`: `top_k` ergänzt und persistenter In-Memory-Index-Cache (TTL + Signatur, Scope-basiert) implementiert
 - [x] Such-Synonyme robust normalisiert (gestemmte Keys), damit `klimaanlage` konsistent `Klimagerät`-Treffer liefert
-- [x] Search auf lokale CPU-Hybrid-Retrieval umgestellt (MiniSearch + FastEmbed Embedding-Reranking), ohne hardcoded Synonymlogik
-- [x] Regelmäßige Reindexierung aller erlaubten HA-Entities implementiert (60s Intervall, persistenter Runtime-Cache)
-- [x] Reindex-Intervall auf täglich angepasst (statt 60s)
 
 ## Nachfolgende Schritte
 
@@ -97,6 +94,5 @@
 - [ ] Optional: Beispiel-Playbook mit 3-5 validierten `call_service`-Payloads (Licht, Klima, Schalter) ergänzen
 - [ ] Optional: Such-Synonymliste aus Konfiguration speisbar machen (`mcp_search_synonyms`) für standortspezifische Begriffe
 - [ ] Optional: Embedding-Retrieval für `search_entities` ergänzen (vektorbasiert, externe DB oder lokaler Mini-Index)
-- [ ] Optional: Embedding-Modell als Add-on-Option konfigurierbar machen (`mcp_embedding_model`) inkl. warmup beim Start
 - [ ] Optional: Query-Analytics hinzufügen (anonymisierte Top-Queries/No-Result-Rate) zur gezielten Synonympflege
 - [ ] Optional: Cache-Metriken exponieren (`cache_hit`, `cache_miss`, `cache_size`) für Betriebsbeobachtung

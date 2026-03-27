@@ -6,21 +6,12 @@
 'use strict';
 
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { z } = require('zod');
 const WebSocket = require('ws');
 const MiniSearch = require('minisearch');
-const { FlagEmbedding, EmbeddingModel, ExecutionProvider } = require('fastembed');
 const SEARCH_INDEX_CACHE_TTL_MS = 30000;
-const SEARCH_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000; // 1 Tag
-const EMBEDDING_BATCH_SIZE = 128;
-const HYBRID_ALPHA = 0.55; // lexical score weight
-const HYBRID_BETA = 0.45; // embedding cosine similarity weight
-const EMBEDDING_CACHE_DIR = path.join(process.env.DATA_DIR || '/data', 'embedding_models');
-const SEARCH_RUNTIME_BY_KEY = new Map();
 
 function splitList(raw) {
   if (raw == null || raw === '') return [];
@@ -63,6 +54,40 @@ function deUmlautForSearch(raw) {
     .replace(/Ü/g, 'ue');
 }
 
+const SEARCH_SYNONYMS = {
+  klima: ['klimaanlage', 'klimageraet', 'klimagerat', 'klimatisierung', 'climate'],
+  klimaanlage: ['klima', 'klimageraet', 'klimagerat', 'climate'],
+  klimageraet: ['klimaanlage', 'klimagerat', 'klima', 'climate'],
+  klimagerat: ['klimaanlage', 'klimageraet', 'klima', 'climate'],
+  climate: ['klima', 'klimaanlage', 'klimageraet', 'klimagerat'],
+  heizung: ['heizkoerper', 'heizkorper', 'waerme', 'warm'],
+  heizkoerper: ['heizung', 'waerme', 'warm'],
+  licht: ['lampe', 'leuchte', 'light'],
+  lampe: ['licht', 'leuchte', 'light'],
+  leuchte: ['licht', 'lampe', 'light'],
+  lueftung: ['luefter', 'ventilator', 'fan'],
+  luefter: ['lueftung', 'ventilator', 'fan'],
+  ventilator: ['luefter', 'lueftung', 'fan'],
+};
+
+function buildNormalizedSynonymMap(source) {
+  const map = new Map();
+  for (const [rawKey, rawValues] of Object.entries(source || {})) {
+    const keyTokens = tokenizeForSearch(rawKey);
+    const valueTokens = Array.isArray(rawValues)
+      ? rawValues.flatMap((v) => tokenizeForSearch(v))
+      : [];
+    for (const kt of keyTokens) {
+      const set = map.get(kt) || new Set();
+      for (const vt of valueTokens) set.add(vt);
+      map.set(kt, set);
+    }
+  }
+  return map;
+}
+
+const SEARCH_SYNONYMS_NORMALIZED = buildNormalizedSynonymMap(SEARCH_SYNONYMS);
+
 function stemSearchToken(token) {
   let t = String(token || '');
   if (!t) return '';
@@ -95,6 +120,12 @@ function buildWeightedQueryTerms(rawQuery) {
   const baseTerms = tokenizeForSearch(rawQuery);
   for (const t of baseTerms) {
     out.set(t, Math.max(out.get(t) || 0, 1.0));
+    const synSet = SEARCH_SYNONYMS_NORMALIZED.get(t);
+    if (synSet && synSet.size) {
+      for (const x of synSet) {
+        out.set(x, Math.max(out.get(x) || 0, 0.75));
+      }
+    }
   }
   return out;
 }
@@ -152,126 +183,6 @@ function buildRowsSignature(rows) {
     h.update('\n');
   }
   return h.digest('hex');
-}
-
-function cosineSimilarity(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length === 0 || a.length !== b.length) return 0;
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    const x = Number(a[i] || 0);
-    const y = Number(b[i] || 0);
-    dot += x * y;
-    na += x * x;
-    nb += y * y;
-  }
-  if (na <= 0 || nb <= 0) return 0;
-  return dot / (Math.sqrt(na) * Math.sqrt(nb));
-}
-
-function buildRuntimeKey(ha_url, entitySet, domainSet, mcp_area_allowlist, forced_area_scope) {
-  const entities = entitySet ? Array.from(entitySet).sort() : [];
-  const domains = domainSet ? Array.from(domainSet).sort() : [];
-  return JSON.stringify({
-    ha_url: String(ha_url || ''),
-    entities,
-    domains,
-    area_allowlist: String(mcp_area_allowlist || ''),
-    forced_area_scope: String(forced_area_scope || ''),
-  });
-}
-
-async function getEmbeddingModel() {
-  if (globalThis.__ha_chat_embedding_model) return globalThis.__ha_chat_embedding_model;
-  if (globalThis.__ha_chat_embedding_model_promise) return globalThis.__ha_chat_embedding_model_promise;
-  globalThis.__ha_chat_embedding_model_promise = (async () => {
-    try { fs.mkdirSync(EMBEDDING_CACHE_DIR, { recursive: true }); } catch (_) {}
-    return FlagEmbedding.init({
-      model: EmbeddingModel.MLE5Large,
-      executionProviders: [ExecutionProvider.CPU],
-      cacheDir: EMBEDDING_CACHE_DIR,
-      showDownloadProgress: false,
-    });
-  })();
-  try {
-    const model = await globalThis.__ha_chat_embedding_model_promise;
-    globalThis.__ha_chat_embedding_model = model;
-    return model;
-  } finally {
-    globalThis.__ha_chat_embedding_model_promise = null;
-  }
-}
-
-function getOrCreateSearchRuntime(runtimeKey) {
-  let rt = SEARCH_RUNTIME_BY_KEY.get(runtimeKey);
-  if (rt) return rt;
-  rt = {
-    baseRows: [],
-    baseSignature: '',
-    baseFetchedAt: 0,
-    baseIndex: null,
-    baseEmbeddings: new Map(),
-    scopedCache: new Map(),
-    refreshInFlight: null,
-    timerStarted: false,
-    lastError: null,
-  };
-  SEARCH_RUNTIME_BY_KEY.set(runtimeKey, rt);
-  return rt;
-}
-
-async function buildEmbeddingsForRows(model, rows) {
-  const texts = rows.map((r) => `passage: ${r.friendly_name || ''} ${r.entity_id || ''} ${r.domain || ''} ${r.state || ''}`);
-  const out = new Map();
-  if (!texts.length) return out;
-  let index = 0;
-  const gen = model.passageEmbed(texts, EMBEDDING_BATCH_SIZE);
-  for await (const batch of gen) {
-    for (const vec of batch) {
-      const row = rows[index++];
-      if (!row) continue;
-      out.set(row.entity_id, Array.from(vec));
-    }
-  }
-  return out;
-}
-
-async function refreshBaseSearchData(rt, ha_url, ha_token, entitySet, domainSet) {
-  if (rt.refreshInFlight) return rt.refreshInFlight;
-  rt.refreshInFlight = (async () => {
-    const rows = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
-    const sig = buildRowsSignature(rows);
-    const now = Date.now();
-    if (rt.baseSignature === sig && rt.baseIndex) {
-      rt.baseFetchedAt = now;
-      return;
-    }
-    const baseIndex = createMiniSearchIndex(rows);
-    let baseEmbeddings = new Map();
-    try {
-      const model = await getEmbeddingModel();
-      baseEmbeddings = await buildEmbeddingsForRows(model, rows);
-    } catch (e) {
-      // Soft-fail: Lexical Search bleibt verfügbar, Embedding-Rerank wird übersprungen.
-      rt.lastError = e;
-    }
-    rt.baseRows = rows;
-    rt.baseSignature = sig;
-    rt.baseFetchedAt = now;
-    rt.baseIndex = baseIndex;
-    rt.baseEmbeddings = baseEmbeddings;
-    rt.scopedCache.clear();
-    if (baseEmbeddings.size) rt.lastError = null;
-  })();
-  try {
-    await rt.refreshInFlight;
-  } catch (e) {
-    rt.lastError = e;
-    throw e;
-  } finally {
-    rt.refreshInFlight = null;
-  }
 }
 
 function isEntityAllowed(entityId, entitySet, domainSet) {
@@ -565,8 +476,7 @@ function createMcpServer(ctx) {
     name: 'ha-chat-addon',
     version: '1.0.0',
   });
-  const runtimeKey = buildRuntimeKey(ha_url, entitySet, domainSet, mcp_area_allowlist, forced_area_scope);
-  const searchRuntime = getOrCreateSearchRuntime(runtimeKey);
+  const searchIndexCache = new Map();
 
   const areaResolver = createAreaResolver(ha_url, ha_token, mcp_area_allowlist);
   const getEffectiveArea = (toolArea) => {
@@ -578,13 +488,6 @@ function createMcpServer(ctx) {
     entitySet || domainSet || (typeof mcp_area_allowlist === 'string' && mcp_area_allowlist.trim()) || getEffectiveArea('')
       ? 'Nur freigegebene Entities/Domains/Areas (Add-on mcp_*_allowlist / optional URL-scope).'
       : 'Alle Entities, die das konfigurierte HA-Token darf.';
-
-  if (!searchRuntime.timerStarted) {
-    searchRuntime.timerStarted = true;
-    setInterval(() => {
-      refreshBaseSearchData(searchRuntime, ha_url, ha_token, entitySet, domainSet).catch(() => {});
-    }, SEARCH_REFRESH_INTERVAL_MS);
-  }
 
   server.registerPrompt(
     'ha_chat_scoped_assistant',
@@ -650,7 +553,7 @@ function createMcpServer(ctx) {
     'search_entities',
     {
       description:
-        'Sucht gezielt in freigegebenen HA-Entities mit Hybrid-Retrieval (BM25/Fuzzy + Embedding-Reranking), optional nach domain/state/area.',
+        'Sucht gezielt in freigegebenen HA-Entities mit MiniSearch-Index (BM25/Fuzzy) über entity_id/friendly_name sowie optional nach domain/state.',
       inputSchema: {
         query: z.string().optional().describe('Freitextsuche (z. B. c0.09, wohnzimmer, decke)'),
         domain: z.string().optional().describe('Optionaler Domain-Filter (z. B. light, switch, lock)'),
@@ -668,11 +571,8 @@ function createMcpServer(ctx) {
       const lim = limit != null ? limit : 50;
       const off = offset != null ? offset : 0;
       try {
-        const now = Date.now();
-        if (!searchRuntime.baseIndex || now - searchRuntime.baseFetchedAt >= SEARCH_REFRESH_INTERVAL_MS) {
-          await refreshBaseSearchData(searchRuntime, ha_url, ha_token, entitySet, domainSet);
-        }
-        const rowsAll = await areaResolver.filterRows(searchRuntime.baseRows, getEffectiveArea(area));
+        const rowsRaw = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
+        const rowsAll = await areaResolver.filterRows(rowsRaw, getEffectiveArea(area));
         const scopedRows = rowsAll.filter((r) => {
           if (d && String(r.domain || '').toLowerCase() !== d) return false;
           if (s && String(r.state || '').toLowerCase() !== s) return false;
@@ -684,58 +584,49 @@ function createMcpServer(ctx) {
             .slice()
             .sort((a, b) => String(a.friendly_name || '').localeCompare(String(b.friendly_name || ''), 'de'));
         } else {
-          const cacheKey = JSON.stringify({
-            scope_area: getEffectiveArea(area) || '',
-            domain: d || '',
-            state: s || '',
-            base_signature: searchRuntime.baseSignature,
-          });
-          const sig = buildRowsSignature(scopedRows);
-          const existing = searchRuntime.scopedCache.get(cacheKey);
-          const canReuse = !!(existing && existing.signature === sig && now - existing.createdAt < SEARCH_INDEX_CACHE_TTL_MS);
-          const entry = canReuse
-            ? existing
-            : {
-                signature: sig,
-                createdAt: now,
-                rowsById: new Map(scopedRows.map((r) => [r.entity_id, r])),
-                index: createMiniSearchIndex(scopedRows),
-              };
-          if (!canReuse) searchRuntime.scopedCache.set(cacheKey, entry);
-          if (searchRuntime.scopedCache.size > 64) {
-            for (const [k, v] of searchRuntime.scopedCache.entries()) {
-              if (now - v.createdAt >= SEARCH_INDEX_CACHE_TTL_MS) searchRuntime.scopedCache.delete(k);
-            }
-          }
-
           const terms = buildSearchTermsForIndex(q);
           if (!terms.length) {
             filtered = [];
           } else {
+            const cacheKey = JSON.stringify({
+              area: getEffectiveArea(area) || '',
+              domain: d || '',
+              state: s || '',
+            });
+            const sig = buildRowsSignature(scopedRows);
+            const now = Date.now();
+            const existing = searchIndexCache.get(cacheKey);
+            const canReuse =
+              !!(existing && existing.signature === sig && now - existing.createdAt < SEARCH_INDEX_CACHE_TTL_MS);
+            const entry = canReuse
+              ? existing
+              : {
+                  signature: sig,
+                  createdAt: now,
+                  index: createMiniSearchIndex(scopedRows),
+                };
+            if (!canReuse) searchIndexCache.set(cacheKey, entry);
+
+            // Opportunistische Cache-Bereinigung.
+            if (searchIndexCache.size > 32) {
+              for (const [k, v] of searchIndexCache.entries()) {
+                if (now - v.createdAt >= SEARCH_INDEX_CACHE_TTL_MS) searchIndexCache.delete(k);
+              }
+            }
+
             const queryString = terms.join(' ');
             const hits = entry.index.search(queryString);
             const topKRequested = top_k != null ? top_k : Math.max(200, off + lim);
             const topK = Math.max(topKRequested, off + lim);
-            const lexicalTop = hits.slice(0, topK);
-            if (!searchRuntime.baseEmbeddings.size) {
-              filtered = lexicalTop.map((h) => entry.rowsById.get(h.entity_id)).filter(Boolean);
-            } else {
-              const model = await getEmbeddingModel();
-              const queryVec = await model.queryEmbed('query: ' + q);
-              const reranked = lexicalTop
-                .map((h) => {
-                  const row = entry.rowsById.get(h.entity_id);
-                  if (!row) return null;
-                  const emb = searchRuntime.baseEmbeddings.get(h.entity_id);
-                  if (!emb) return null;
-                  const cos = cosineSimilarity(queryVec, emb);
-                  const lexicalScore = Number(h.score || 0);
-                  return { row, score: HYBRID_ALPHA * lexicalScore + HYBRID_BETA * cos };
-                })
-                .filter(Boolean)
-                .sort((a, b) => b.score - a.score);
-              filtered = reranked.map((x) => x.row);
-            }
+            const limitedHits = hits.slice(0, topK);
+            filtered = limitedHits.map((h) => ({
+              entity_id: h.entity_id,
+              friendly_name: h.friendly_name,
+              domain: h.domain,
+              state: h.state,
+              area_id: h.area_id,
+              area_name: h.area_name,
+            }));
           }
         }
         const rows = filtered.slice(off, off + lim);
