@@ -193,8 +193,8 @@
         background:var(--card-background-color, rgba(25,25,25,0.98));
         color:var(--primary-text-color, #e1e1e1);
         border:1px solid var(--divider-color, rgba(255,255,255,0.12));
-        border-radius:18px;
-        border-bottom-right-radius:4px;
+        border-radius:24px;
+        border-bottom-right-radius:10px;
         box-shadow:var(--ha-box-shadow-l, 0 10px 30px rgba(0,0,0,.45));
         overflow:hidden;
         display:none;
@@ -248,6 +248,8 @@
       .${POPUP_CLASS} .composer-shell{
         cursor:text;
         width:100%;
+        max-width:100%;
+        box-sizing:border-box;
         border:1px solid #3a3a3a;
         background:#232323;
         border-radius:24px;
@@ -279,14 +281,25 @@
         align-items:center;
         justify-content:space-between;
         gap:8px;
+        min-width:0;
       }
-      .${POPUP_CLASS} .composer-left{display:flex;align-items:center;gap:6px;}
+      .${POPUP_CLASS} .composer-left{
+        display:flex;
+        align-items:center;
+        gap:6px;
+        min-width:0;
+        flex:1 1 auto;
+        overflow-x:auto;
+        scrollbar-width:none;
+      }
+      .${POPUP_CLASS} .composer-left::-webkit-scrollbar{display:none;}
       .${POPUP_CLASS} .composer-icon-btn{
         width:34px;height:34px;border-radius:999px;
         border:1px solid #3a3a3a;
         background:#2a2a2a;color:#b6b6b6;
         cursor:pointer;display:flex;align-items:center;justify-content:center;
         padding:0;transition:border-color .15s,color .15s,background .15s;
+        flex:0 0 auto;
       }
       .${POPUP_CLASS} .composer-icon-btn:hover{border-color:#555;color:#e0e0e0;background:#303030;}
       .${POPUP_CLASS} .composer-icon-btn[data-active="true"]{border-color:#009AC7;color:#009AC7;background:#1f2d31;}
@@ -294,10 +307,17 @@
         height:34px;border-radius:999px;border:1px solid #3a3a3a;
         background:#2a2a2a;color:#b6b6b6;padding:0 10px;font-size:12px;
         cursor:pointer;display:flex;align-items:center;gap:6px;
+        flex:0 0 auto;
       }
       .${POPUP_CLASS} .composer-chip-btn:hover{border-color:#555;color:#e0e0e0;background:#303030;}
       .${POPUP_CLASS} .send-btn{width:36px;height:36px;border-radius:50%;border:none;background:#009AC7;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
       .${POPUP_CLASS} .send-btn:disabled{opacity:.45;cursor:not-allowed;}
+      @media (max-width:420px){
+        .${POPUP_CLASS} .composer-shell{padding:7px 8px 5px;}
+        .${POPUP_CLASS} .composer-row{gap:6px;}
+        .${POPUP_CLASS} .composer-chip-btn{width:34px;padding:0;justify-content:center;}
+        .${POPUP_CLASS} .composer-chip-btn span{display:none;}
+      }
       .${POPUP_CLASS} .fab-error{color:#ff8a80;font-size:0.82rem;padding:0 10px 6px;display:none;}
       .${POPUP_CLASS} .fab-status{font-size:0.75rem;color:#888;padding:4px 10px;display:none;}
       .${POPUP_CLASS} .empty-hint{text-align:center;color:#666;font-size:0.85rem;padding:24px 12px;}
@@ -731,16 +751,6 @@
               <textarea id="fab-input" class="composer-input" rows="1" placeholder="Nachricht …"></textarea>
               <div class="composer-row">
                 <div class="composer-left">
-                  <button type="button" class="composer-icon-btn" title="Dateien (bald)" aria-label="Dateien">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-                  </button>
-                  <button type="button" class="composer-chip-btn" title="Websuche (bald)" aria-label="Websuche">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a14.5 14.5 0 0 0 0 20"/></svg>
-                    <span>Search</span>
-                  </button>
-                  <button type="button" class="composer-icon-btn" title="Tools (bald)" aria-label="Tools">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
-                  </button>
                   <button type="button" class="composer-icon-btn" id="fab-voice" title="Spracheingabe" aria-label="Spracheingabe">
                     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M9 21h6"/></svg>
                   </button>

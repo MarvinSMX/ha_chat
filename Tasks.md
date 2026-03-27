@@ -68,6 +68,9 @@
 - [x] MCP-Registryzugriff auf WebSocket-only umgestellt (`config/entity_registry/list`, `config/area_registry/list`)
 - [x] FAB Composer auf ChatGPT-ähnliches MessageInput-Design umgestellt (Textarea + Action-Row)
 - [x] FAB Voice Commands: Web Speech API Transcription (Mic-Button) integriert
+- [x] FAB Composer Breiten-/Overflow-Fix: kein Rechts-Clip bei schmalen Popup-Breiten
+- [x] FAB Popup-Rundungen an Message-Input angeglichen; unten rechts weicher (10px statt 4px)
+- [x] FAB PromptInputActions reduziert: nur Mikrofon + Senden (kein Plus, Search, Tools)
 
 ## Nachfolgende Schritte
 
