@@ -10,6 +10,7 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { z } = require('zod');
 const WebSocket = require('ws');
+const MiniSearch = require('minisearch');
 
 function splitList(raw) {
   if (raw == null || raw === '') return [];
@@ -111,69 +112,42 @@ function buildWeightedQueryTerms(rawQuery) {
   return out;
 }
 
-function incMap(map, key, by) {
-  map.set(key, (map.get(key) || 0) + by);
+function createMiniSearchIndex(rows) {
+  const ms = new MiniSearch({
+    idField: 'entity_id',
+    fields: ['friendly_name', 'entity_id', 'friendly_name_tokens', 'entity_id_tokens'],
+    storeFields: ['entity_id', 'friendly_name', 'domain', 'state', 'area_id', 'area_name'],
+    searchOptions: {
+      prefix: true,
+      fuzzy: 0.2,
+      combineWith: 'OR',
+      boost: {
+        friendly_name: 4,
+        friendly_name_tokens: 3,
+        entity_id: 2,
+        entity_id_tokens: 1.5,
+      },
+    },
+    processTerm: (term) => stemSearchToken(normalizeSearchText(term)),
+    tokenize: (text) => tokenizeForSearch(text),
+  });
+  ms.addAll(
+    rows.map((r) => ({
+      ...r,
+      friendly_name_tokens: tokenizeForSearch(r.friendly_name).join(' '),
+      entity_id_tokens: tokenizeForSearch(r.entity_id).join(' '),
+    }))
+  );
+  return ms;
 }
 
-function buildEntitySearchIndex(rows) {
-  const docs = [];
-  const df = new Map();
-  let totalDocLength = 0;
-  for (const r of rows) {
-    const idTokens = tokenizeForSearch(r.entity_id);
-    const fnTokens = tokenizeForSearch(r.friendly_name);
-    const tf = new Map();
-    for (const t of idTokens) incMap(tf, t, 1.0);
-    for (const t of fnTokens) incMap(tf, t, 2.0);
-    const docLength = Array.from(tf.values()).reduce((a, b) => a + b, 0) || 1;
-    totalDocLength += docLength;
-    const seen = new Set(tf.keys());
-    for (const term of seen) incMap(df, term, 1);
-    docs.push({
-      row: r,
-      tf,
-      docLength,
-      idText: normalizeSearchText(r.entity_id),
-      fnText: normalizeSearchText(r.friendly_name),
-    });
-  }
-  const N = docs.length || 1;
-  const avgDocLength = totalDocLength > 0 ? totalDocLength / N : 1;
-  return { docs, df, N, avgDocLength };
-}
-
-function scoreDocBm25(index, doc, queryTerms) {
-  if (!queryTerms || queryTerms.size === 0) return 0;
-  const k1 = 1.2;
-  const b = 0.75;
-  let score = 0;
-  for (const [term, qWeight] of queryTerms.entries()) {
-    const tf = doc.tf.get(term) || 0;
-    if (!tf) continue;
-    const df = index.df.get(term) || 0;
-    const idf = Math.log(1 + (index.N - df + 0.5) / (df + 0.5));
-    const norm = tf + k1 * (1 - b + b * (doc.docLength / index.avgDocLength));
-    score += qWeight * idf * ((tf * (k1 + 1)) / norm);
-  }
-  return score;
-}
-
-function fuzzyDocBoost(doc, queryTerms) {
-  if (!queryTerms || queryTerms.size === 0) return 0;
-  let boost = 0;
-  const idText = doc.idText || '';
-  const fnText = doc.fnText || '';
-  for (const [term, w] of queryTerms.entries()) {
-    if (!term || term.length < 3) continue;
-    if (fnText.includes(term)) boost += 0.45 * w;
-    else if (idText.includes(term)) boost += 0.3 * w;
-    else {
-      const short = term.slice(0, Math.max(3, term.length - 1));
-      if (fnText.includes(short)) boost += 0.2 * w;
-      else if (idText.includes(short)) boost += 0.12 * w;
-    }
-  }
-  return boost;
+function buildSearchTermsForIndex(rawQuery) {
+  const weighted = buildWeightedQueryTerms(rawQuery);
+  const terms = Array.from(weighted.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([term]) => term)
+    .filter(Boolean);
+  return Array.from(new Set(terms));
 }
 
 function isEntityAllowed(entityId, entitySet, domainSet) {
@@ -543,7 +517,7 @@ function createMcpServer(ctx) {
     'search_entities',
     {
       description:
-        'Sucht gezielt in freigegebenen HA-Entities mit indexbasiertem Ranking (BM25-ähnlich) über entity_id/friendly_name sowie optional nach domain/state.',
+        'Sucht gezielt in freigegebenen HA-Entities mit MiniSearch-Index (BM25/Fuzzy) über entity_id/friendly_name sowie optional nach domain/state.',
       inputSchema: {
         query: z.string().optional().describe('Freitextsuche (z. B. c0.09, wohnzimmer, decke)'),
         domain: z.string().optional().describe('Optionaler Domain-Filter (z. B. light, switch, lock)'),
@@ -559,30 +533,37 @@ function createMcpServer(ctx) {
       const s = String(state || '').trim().toLowerCase();
       const lim = limit != null ? limit : 50;
       const off = offset != null ? offset : 0;
-      const queryTerms = buildWeightedQueryTerms(q);
       try {
         const rowsRaw = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
         const rowsAll = await areaResolver.filterRows(rowsRaw, getEffectiveArea(area));
-        const index = buildEntitySearchIndex(rowsAll);
-        const filtered = rowsAll
-          .map((r, idx) => {
-            const doc = index.docs[idx];
-            const bm25 = q ? scoreDocBm25(index, doc, queryTerms) : 1;
-            const fuzzy = q ? fuzzyDocBoost(doc, queryTerms) : 0;
-            return { row: r, score: bm25 + fuzzy };
-          })
-          .filter((x) => {
-            const r = x.row;
-            if (d && String(r.domain || '').toLowerCase() !== d) return false;
-            if (s && String(r.state || '').toLowerCase() !== s) return false;
-            if (!q) return true;
-            return x.score > 0;
-          })
-          .sort((a, b) => {
-            if (b.score !== a.score) return b.score - a.score;
-            return String(a.row.friendly_name || '').localeCompare(String(b.row.friendly_name || ''), 'de');
-          })
-          .map((x) => x.row);
+        const scopedRows = rowsAll.filter((r) => {
+          if (d && String(r.domain || '').toLowerCase() !== d) return false;
+          if (s && String(r.state || '').toLowerCase() !== s) return false;
+          return true;
+        });
+        let filtered;
+        if (!q) {
+          filtered = scopedRows
+            .slice()
+            .sort((a, b) => String(a.friendly_name || '').localeCompare(String(b.friendly_name || ''), 'de'));
+        } else {
+          const index = createMiniSearchIndex(scopedRows);
+          const terms = buildSearchTermsForIndex(q);
+          if (!terms.length) {
+            filtered = [];
+          } else {
+            const queryString = terms.join(' ');
+            const hits = index.search(queryString);
+            filtered = hits.map((h) => ({
+              entity_id: h.entity_id,
+              friendly_name: h.friendly_name,
+              domain: h.domain,
+              state: h.state,
+              area_id: h.area_id,
+              area_name: h.area_name,
+            }));
+          }
+        }
         const rows = filtered.slice(off, off + lim);
         return textResult({
           total: filtered.length,

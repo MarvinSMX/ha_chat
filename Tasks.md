@@ -82,6 +82,7 @@
 - [x] README-MCP-Doku zu `call_service` auf `service_data.entity_id` (String/Array) ergänzt
 - [x] MCP `search_entities` verbessert: robuste Suche mit Normalisierung, Synonymen und Ranking (z. B. `klimaanlage` findet `Klimagerät`)
 - [x] MCP `search_entities` auf Suchmaschinen-ähnlichen Index umgestellt (BM25-ähnliches Scoring + Fuzzy-Boost)
+- [x] MCP `search_entities` auf produktionsnahe Suchbibliothek umgestellt (`minisearch`, BM25/Fuzzy, gewichtete Felder)
 
 ## Nachfolgende Schritte
 
@@ -91,3 +92,4 @@
 - [ ] Optional: Beispiel-Playbook mit 3-5 validierten `call_service`-Payloads (Licht, Klima, Schalter) ergänzen
 - [ ] Optional: Such-Synonymliste aus Konfiguration speisbar machen (`mcp_search_synonyms`) für standortspezifische Begriffe
 - [ ] Optional: Embedding-Retrieval für `search_entities` ergänzen (vektorbasiert, externe DB oder lokaler Mini-Index)
+- [ ] Optional: Query-Analytics hinzufügen (anonymisierte Top-Queries/No-Result-Rate) zur gezielten Synonympflege
