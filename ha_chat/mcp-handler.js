@@ -70,6 +70,24 @@ const SEARCH_SYNONYMS = {
   ventilator: ['luefter', 'lueftung', 'fan'],
 };
 
+function buildNormalizedSynonymMap(source) {
+  const map = new Map();
+  for (const [rawKey, rawValues] of Object.entries(source || {})) {
+    const keyTokens = tokenizeForSearch(rawKey);
+    const valueTokens = Array.isArray(rawValues)
+      ? rawValues.flatMap((v) => tokenizeForSearch(v))
+      : [];
+    for (const kt of keyTokens) {
+      const set = map.get(kt) || new Set();
+      for (const vt of valueTokens) set.add(vt);
+      map.set(kt, set);
+    }
+  }
+  return map;
+}
+
+const SEARCH_SYNONYMS_NORMALIZED = buildNormalizedSynonymMap(SEARCH_SYNONYMS);
+
 function stemSearchToken(token) {
   let t = String(token || '');
   if (!t) return '';
@@ -102,11 +120,10 @@ function buildWeightedQueryTerms(rawQuery) {
   const baseTerms = tokenizeForSearch(rawQuery);
   for (const t of baseTerms) {
     out.set(t, Math.max(out.get(t) || 0, 1.0));
-    const syn = SEARCH_SYNONYMS[t];
-    if (Array.isArray(syn)) {
-      for (const s of syn) {
-        const st = tokenizeForSearch(s);
-        for (const x of st) out.set(x, Math.max(out.get(x) || 0, 0.75));
+    const synSet = SEARCH_SYNONYMS_NORMALIZED.get(t);
+    if (synSet && synSet.size) {
+      for (const x of synSet) {
+        out.set(x, Math.max(out.get(x) || 0, 0.75));
       }
     }
   }

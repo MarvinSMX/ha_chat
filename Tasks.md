@@ -84,6 +84,7 @@
 - [x] MCP `search_entities` auf Suchmaschinen-ähnlichen Index umgestellt (BM25-ähnliches Scoring + Fuzzy-Boost)
 - [x] MCP `search_entities` auf produktionsnahe Suchbibliothek umgestellt (`minisearch`, BM25/Fuzzy, gewichtete Felder)
 - [x] MCP `search_entities`: `top_k` ergänzt und persistenter In-Memory-Index-Cache (TTL + Signatur, Scope-basiert) implementiert
+- [x] Such-Synonyme robust normalisiert (gestemmte Keys), damit `klimaanlage` konsistent `Klimagerät`-Treffer liefert
 
 ## Nachfolgende Schritte
 
