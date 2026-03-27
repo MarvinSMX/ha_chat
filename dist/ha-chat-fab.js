@@ -193,8 +193,8 @@
         background:var(--card-background-color, rgba(25,25,25,0.98));
         color:var(--primary-text-color, #e1e1e1);
         border:1px solid var(--divider-color, rgba(255,255,255,0.12));
-        border-radius:18px;
-        border-bottom-right-radius:4px;
+        border-radius:24px;
+        border-bottom-right-radius:10px;
         box-shadow:var(--ha-box-shadow-l, 0 10px 30px rgba(0,0,0,.45));
         overflow:hidden;
         display:none;
@@ -751,16 +751,6 @@
               <textarea id="fab-input" class="composer-input" rows="1" placeholder="Nachricht …"></textarea>
               <div class="composer-row">
                 <div class="composer-left">
-                  <button type="button" class="composer-icon-btn" title="Dateien (bald)" aria-label="Dateien">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-                  </button>
-                  <button type="button" class="composer-chip-btn" title="Websuche (bald)" aria-label="Websuche">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a14.5 14.5 0 0 0 0 20"/></svg>
-                    <span>Search</span>
-                  </button>
-                  <button type="button" class="composer-icon-btn" title="Tools (bald)" aria-label="Tools">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
-                  </button>
                   <button type="button" class="composer-icon-btn" id="fab-voice" title="Spracheingabe" aria-label="Spracheingabe">
                     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M9 21h6"/></svg>
                   </button>
