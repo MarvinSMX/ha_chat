@@ -245,9 +245,58 @@
       .${POPUP_CLASS} .img-wrapper.loaded .img-skeleton{display:none;}
       .${POPUP_CLASS} .img-wrapper.loaded .chat-img{opacity:1;}
       .${POPUP_CLASS} .composer{flex-shrink:0;padding:8px 10px 10px;}
-      .${POPUP_CLASS} .input-wrap{display:flex;gap:8px;align-items:center;padding:6px 10px;background:#2d2d2d;border:1px solid #3a3a3a;border-radius:20px;}
-      .${POPUP_CLASS} .input-wrap input{flex:1;min-width:0;border:none;background:transparent;color:inherit;font-size:0.9rem;outline:none;}
-      .${POPUP_CLASS} .send-btn{width:38px;height:38px;border-radius:50%;border:none;background:#009AC7;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
+      .${POPUP_CLASS} .composer-shell{
+        cursor:text;
+        width:100%;
+        border:1px solid #3a3a3a;
+        background:#232323;
+        border-radius:24px;
+        padding:8px 10px 6px;
+        box-shadow:0 9px 9px 0 rgba(0,0,0,0.02),0 2px 5px 0 rgba(0,0,0,0.12);
+      }
+      .${POPUP_CLASS} .composer-shell:focus-within{
+        border-color:#4a4a4a;
+        box-shadow:0 0 0 1px rgba(0,154,199,0.35),0 9px 9px 0 rgba(0,0,0,0.02),0 2px 5px 0 rgba(0,0,0,0.12);
+      }
+      .${POPUP_CLASS} .composer-input{
+        width:100%;
+        min-height:44px;
+        max-height:140px;
+        resize:none;
+        border:none;
+        background:transparent;
+        color:#e8e8e8;
+        font-size:18px;
+        line-height:1.35;
+        padding:8px 8px 6px;
+        outline:none;
+        font-family:inherit;
+      }
+      .${POPUP_CLASS} .composer-input::placeholder{color:#8a8a8a;font-size:18px;}
+      .${POPUP_CLASS} .composer-row{
+        margin:2px 0 2px;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:8px;
+      }
+      .${POPUP_CLASS} .composer-left{display:flex;align-items:center;gap:6px;}
+      .${POPUP_CLASS} .composer-icon-btn{
+        width:34px;height:34px;border-radius:999px;
+        border:1px solid #3a3a3a;
+        background:#2a2a2a;color:#b6b6b6;
+        cursor:pointer;display:flex;align-items:center;justify-content:center;
+        padding:0;transition:border-color .15s,color .15s,background .15s;
+      }
+      .${POPUP_CLASS} .composer-icon-btn:hover{border-color:#555;color:#e0e0e0;background:#303030;}
+      .${POPUP_CLASS} .composer-icon-btn[data-active="true"]{border-color:#009AC7;color:#009AC7;background:#1f2d31;}
+      .${POPUP_CLASS} .composer-chip-btn{
+        height:34px;border-radius:999px;border:1px solid #3a3a3a;
+        background:#2a2a2a;color:#b6b6b6;padding:0 10px;font-size:12px;
+        cursor:pointer;display:flex;align-items:center;gap:6px;
+      }
+      .${POPUP_CLASS} .composer-chip-btn:hover{border-color:#555;color:#e0e0e0;background:#303030;}
+      .${POPUP_CLASS} .send-btn{width:36px;height:36px;border-radius:50%;border:none;background:#009AC7;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
       .${POPUP_CLASS} .send-btn:disabled{opacity:.45;cursor:not-allowed;}
       .${POPUP_CLASS} .fab-error{color:#ff8a80;font-size:0.82rem;padding:0 10px 6px;display:none;}
       .${POPUP_CLASS} .fab-status{font-size:0.75rem;color:#888;padding:4px 10px;display:none;}
@@ -327,6 +376,8 @@
       this._chatId = null;
       this._thread = [];
       this._boundThreadClick = null;
+      this._speechRec = null;
+      this._speechListening = false;
       this.shadowRoot.innerHTML = `<style>:host{display:block;width:0;height:0;overflow:hidden;}</style>`;
     }
 
@@ -676,13 +727,30 @@
           <div class="thread" id="fab-thread"><div class="msg-col" id="fab-msg-col"></div></div>
           <div class="fab-error"></div>
           <div class="composer">
-            <div class="input-wrap">
-              <input type="text" id="fab-input" placeholder="Nachricht …" autocomplete="off" />
-              <button type="button" class="send-btn" id="fab-send" title="Senden" aria-label="Senden">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 19V5M5 12l7-7 7 7"/>
-                </svg>
-              </button>
+            <div class="composer-shell">
+              <textarea id="fab-input" class="composer-input" rows="1" placeholder="Nachricht …"></textarea>
+              <div class="composer-row">
+                <div class="composer-left">
+                  <button type="button" class="composer-icon-btn" title="Dateien (bald)" aria-label="Dateien">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                  </button>
+                  <button type="button" class="composer-chip-btn" title="Websuche (bald)" aria-label="Websuche">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a14.5 14.5 0 0 0 0 20"/></svg>
+                    <span>Search</span>
+                  </button>
+                  <button type="button" class="composer-icon-btn" title="Tools (bald)" aria-label="Tools">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+                  </button>
+                  <button type="button" class="composer-icon-btn" id="fab-voice" title="Spracheingabe" aria-label="Spracheingabe">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M9 21h6"/></svg>
+                  </button>
+                </div>
+                <button type="button" class="send-btn" id="fab-send" title="Senden" aria-label="Senden">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 19V5M5 12l7-7 7 7"/>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -690,12 +758,16 @@
 
       pop.querySelector('.head .btn').addEventListener('click', () => this._setOpen(false));
       pop.querySelector('#fab-send').addEventListener('click', () => this._send());
-      pop.querySelector('#fab-input').addEventListener('keydown', (e) => {
+      const inputEl = pop.querySelector('#fab-input');
+      inputEl.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();
           this._send();
         }
       });
+      inputEl.addEventListener('input', () => this._autoGrowComposerInput());
+      const voiceBtn = pop.querySelector('#fab-voice');
+      if (voiceBtn) voiceBtn.addEventListener('click', () => this._toggleVoiceInput());
 
       this._boundThreadClick = (e) => {
         const ub = e.target.closest('button[data-utterance]');
@@ -710,9 +782,11 @@
       root.appendChild(pop);
       this._popupEl = pop;
       this._applyPopupLabels();
+      this._autoGrowComposerInput();
     }
 
     _unmountPopup() {
+      this._stopVoiceInput();
       if (this._backdropEl) {
         this._backdropEl.setAttribute('data-open', 'false');
         this._backdropEl.style.display = 'none';
@@ -734,6 +808,7 @@
 
     _setOpen(open) {
       this._open = !!open;
+      if (!this._open) this._stopVoiceInput();
       this._mountPopup();
       if (!this._popupEl) return;
       this._popupEl.setAttribute('data-open', this._open ? 'true' : 'false');
@@ -867,6 +942,79 @@
       if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
     }
 
+    _autoGrowComposerInput() {
+      const input = this._popupEl && this._popupEl.querySelector('#fab-input');
+      if (!input) return;
+      input.style.height = '44px';
+      const next = Math.min(Math.max(input.scrollHeight, 44), 140);
+      input.style.height = String(next) + 'px';
+    }
+
+    _stopVoiceInput() {
+      this._speechListening = false;
+      const btn = this._popupEl && this._popupEl.querySelector('#fab-voice');
+      if (btn) btn.setAttribute('data-active', 'false');
+      if (this._speechRec) {
+        try { this._speechRec.stop(); } catch (_) {}
+        this._speechRec = null;
+      }
+    }
+
+    _toggleVoiceInput() {
+      if (this._speechListening) {
+        this._stopVoiceInput();
+        this._showStatus('', false);
+        return;
+      }
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        this._showError('Spracheingabe wird vom Browser nicht unterstützt.');
+        return;
+      }
+      const input = this._popupEl && this._popupEl.querySelector('#fab-input');
+      if (!input) return;
+      const rec = new SpeechRecognition();
+      this._speechRec = rec;
+      this._speechListening = true;
+      rec.lang = (this._hass && this._hass.language) || 'de-DE';
+      rec.interimResults = true;
+      rec.maxAlternatives = 1;
+      rec.continuous = false;
+      const btn = this._popupEl && this._popupEl.querySelector('#fab-voice');
+      if (btn) btn.setAttribute('data-active', 'true');
+      this._showStatus('Spracheingabe läuft …', false);
+      let finalText = '';
+      rec.onresult = (ev) => {
+        let interim = '';
+        for (let i = ev.resultIndex; i < ev.results.length; i++) {
+          const txt = (ev.results[i][0] && ev.results[i][0].transcript) ? ev.results[i][0].transcript : '';
+          if (ev.results[i].isFinal) finalText += txt;
+          else interim += txt;
+        }
+        const base = (input.value || '').trim();
+        const prefix = base ? base + ' ' : '';
+        input.value = (prefix + (finalText || interim)).trimStart();
+        this._autoGrowComposerInput();
+      };
+      rec.onerror = (e) => {
+        this._showStatus('', false);
+        this._showError('Spracheingabe: ' + (e && e.error ? e.error : 'Fehler'));
+      };
+      rec.onend = () => {
+        this._speechListening = false;
+        if (btn) btn.setAttribute('data-active', 'false');
+        this._showStatus('', false);
+        this._autoGrowComposerInput();
+        this._speechRec = null;
+      };
+      try {
+        rec.start();
+      } catch (e) {
+        this._showError('Spracheingabe konnte nicht gestartet werden.');
+        this._stopVoiceInput();
+      }
+    }
+
     _send() {
       const input = this._popupEl && this._popupEl.querySelector('#fab-input');
       const sendBtn = this._popupEl && this._popupEl.querySelector('#fab-send');
@@ -874,6 +1022,7 @@
       const text = (input.value || '').trim();
       if (!text) return;
       input.value = '';
+      this._autoGrowComposerInput();
       this._thread.push({ role: 'user', content: text, sources: [], actions: [], pending: false });
       this._thread.push({ role: 'assistant', content: '', sources: [], actions: [], pending: true });
       this._renderThread();

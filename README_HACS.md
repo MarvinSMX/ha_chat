@@ -120,6 +120,16 @@ icon: mdi:chat
 - `area_scope` / `ha_area` / `area` / `room` – Bereichsname oder `area_id`, wird an N8N weitergegeben (Room-Scope)
 - `zIndex` – z. B. `100000`
 
+### Voice Commands (Web API)
+
+Im FAB-Composer gibt es jetzt ein Mikrofon-Icon. Das nutzt die Browser-Transcription (Web Speech API) für Spracheingabe:
+
+- Start/Stopp per Mic-Button
+- Transkript landet direkt im Eingabefeld
+- Senden weiterhin per Pfeil-Button oder Enter
+
+Hinweis: Die Browser-Unterstützung variiert je nach Gerät/Browser.
+
 ### Hinweis zu `/hassio/ingress/...`
 
 Dieser Supervisor-Pfad bleibt für die **eingebettete Web-UI** des Add-ons gedacht; für **programmatische** Aufrufe von Lovelace aus ist **`/api/hassio_ingress/<token>/...`** der passende Zielpfad.

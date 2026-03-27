@@ -66,6 +66,8 @@
 - [x] MCP: Native HA-Area-Filter über `mcp_area_allowlist` + optionales `area` in Tools (`list/search/get/call_service`)
 - [x] MCP: fester URL-Scope (`/api/mcp?scope=...`) erzwingt Bereich serverseitig; Tool-`area` kann ihn nicht überschreiben
 - [x] MCP-Registryzugriff auf WebSocket-only umgestellt (`config/entity_registry/list`, `config/area_registry/list`)
+- [x] FAB Composer auf ChatGPT-ähnliches MessageInput-Design umgestellt (Textarea + Action-Row)
+- [x] FAB Voice Commands: Web Speech API Transcription (Mic-Button) integriert
 
 ## Nachfolgende Schritte
 
