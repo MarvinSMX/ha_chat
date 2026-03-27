@@ -201,42 +201,11 @@ function createAreaResolver(ha_url, ha_token, globalAreaAllowlistRaw) {
   async function loadRegistries() {
     if (cachePromise) return cachePromise;
     cachePromise = (async () => {
-      let entities;
-      let areas;
-      const [entityRes, areaRes] = await Promise.all([
-        fetch(ha_url + '/api/config/entity_registry', { headers: { Authorization: 'Bearer ' + ha_token } }),
-        fetch(ha_url + '/api/config/area_registry', { headers: { Authorization: 'Bearer ' + ha_token } }),
-      ]);
-      if (!entityRes.ok || !areaRes.ok) {
-        // Deterministischer Fallback auf offizielle HA-WebSocket-Kommandos, falls REST-Registries nicht verfügbar sind.
-        if (entityRes.status === 404 || areaRes.status === 404) {
-          try {
-            const wsData = await fetchRegistriesViaWebSocket(ha_url, ha_token);
-            entities = wsData.entities;
-            areas = wsData.areas;
-          } catch (wsErr) {
-            throw new Error(
-              'HA-Registry-Zugriff fehlgeschlagen (entity_registry=' +
-                entityRes.status +
-                ', area_registry=' +
-                areaRes.status +
-                '), WS-Fallback fehlgeschlagen: ' +
-                (wsErr && wsErr.message ? wsErr.message : String(wsErr))
-            );
-          }
-        } else {
-          throw new Error(
-            'HA-Registry-Zugriff fehlgeschlagen (entity_registry=' +
-              entityRes.status +
-              ', area_registry=' +
-              areaRes.status +
-              ')'
-          );
-        }
-      } else {
-        entities = await entityRes.json();
-        areas = await areaRes.json();
-      }
+      // Registry-Zugriff immer über HA-WebSocket-Kommandos:
+      // config/entity_registry/list + config/area_registry/list
+      const wsData = await fetchRegistriesViaWebSocket(ha_url, ha_token);
+      const entities = wsData.entities;
+      const areas = wsData.areas;
       const entityToAreaId = new Map();
       const areaIdToName = new Map();
       const tokenToAreaIds = new Map();

@@ -82,6 +82,7 @@ Der Server bietet **Streamable HTTP** (stateless) unter **`/api/mcp`** – **der
 - `list_entities`: gibt ohne `limit` **alle** erlaubten Entities zurück (`total`, `returned`, `has_more`), optional `area`.
 - `search_entities`: gezielte Suche über `query` (Name/Entity-ID), optional `domain`, `state`, `area`, plus `limit`/`offset`.
 - `get_entity_state` / `call_service`: optionaler `area`-Parameter für zusätzlichen Room-Scope.
+- Area-/Registry-Auflösung erfolgt über Home-Assistant-WebSocket (`config/entity_registry/list`, `config/area_registry/list`).
 
 **Client-Beispiel (URL):** `http://<host>:8765/api/mcp` bzw. über Ingress die Add-on-URL + `/api/mcp`. Für Cursor o. Ä. analog zur HA-Doku mit **mcp-proxy** und `--transport=streamablehttp --stateless`, Ziel-URL auf dieses Add-on zeigen und `Authorization: Bearer <mcp_bearer_token>` setzen.
 
