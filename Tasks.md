@@ -71,6 +71,8 @@
 - [x] FAB Composer Breiten-/Overflow-Fix: kein Rechts-Clip bei schmalen Popup-Breiten
 - [x] FAB Popup-Rundungen an Message-Input angeglichen; unten rechts weicher (10px statt 4px)
 - [x] FAB PromptInputActions reduziert: nur Mikrofon + Senden (kein Plus, Search, Tools)
+- [x] FAB nochmals verschmälert (380px max) + CSS-Schutz: nur `#fab-voice` in Action-Row sichtbar
+- [x] Korrektur: Popup-Breite wiederhergestellt; nur Prompt-Input schmaler/zentriert gegen Rechts-Clip
 
 ## Nachfolgende Schritte
 

@@ -244,10 +244,10 @@
       .${POPUP_CLASS} .chat-img{display:block;max-width:100%;max-height:220px;border-radius:8px;object-fit:contain;opacity:0;transition:opacity .25s;}
       .${POPUP_CLASS} .img-wrapper.loaded .img-skeleton{display:none;}
       .${POPUP_CLASS} .img-wrapper.loaded .chat-img{opacity:1;}
-      .${POPUP_CLASS} .composer{flex-shrink:0;padding:8px 10px 10px;}
+      .${POPUP_CLASS} .composer{flex-shrink:0;padding:8px 10px 10px;display:flex;justify-content:center;}
       .${POPUP_CLASS} .composer-shell{
         cursor:text;
-        width:100%;
+        width:calc(100% - 10px);
         max-width:100%;
         box-sizing:border-box;
         border:1px solid #3a3a3a;
@@ -293,6 +293,7 @@
         scrollbar-width:none;
       }
       .${POPUP_CLASS} .composer-left::-webkit-scrollbar{display:none;}
+      .${POPUP_CLASS} .composer-left > :not(#fab-voice){display:none !important;}
       .${POPUP_CLASS} .composer-icon-btn{
         width:34px;height:34px;border-radius:999px;
         border:1px solid #3a3a3a;
