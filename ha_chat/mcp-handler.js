@@ -126,10 +126,12 @@ async function fetchRegistriesViaWebSocket(ha_url, ha_token) {
     const ws = new WebSocket(wsUrl);
     const reqEntityId = 101;
     const reqAreaId = 102;
+    const reqDeviceId = 103;
     let done = false;
     let authed = false;
     let entities = null;
     let areas = null;
+    let devices = null;
     let timer = null;
 
     const cleanup = () => {
@@ -145,10 +147,10 @@ async function fetchRegistriesViaWebSocket(ha_url, ha_token) {
     };
     const succeed = () => {
       if (done) return;
-      if (!Array.isArray(entities) || !Array.isArray(areas)) return;
+      if (!Array.isArray(entities) || !Array.isArray(areas) || !Array.isArray(devices)) return;
       done = true;
       cleanup();
-      resolve({ entities, areas });
+      resolve({ entities, areas, devices });
     };
 
     timer = setTimeout(() => fail(new Error('Timeout beim HA-WebSocket-Registryzugriff')), 12000);
@@ -173,6 +175,7 @@ async function fetchRegistriesViaWebSocket(ha_url, ha_token) {
         authed = true;
         ws.send(JSON.stringify({ id: reqEntityId, type: 'config/entity_registry/list' }));
         ws.send(JSON.stringify({ id: reqAreaId, type: 'config/area_registry/list' }));
+        ws.send(JSON.stringify({ id: reqDeviceId, type: 'config/device_registry/list' }));
         return;
       }
       if (!authed || t !== 'result') return;
@@ -185,6 +188,12 @@ async function fetchRegistriesViaWebSocket(ha_url, ha_token) {
       if (msg.id === reqAreaId) {
         if (!msg.success) return fail(new Error('config/area_registry/list fehlgeschlagen'));
         areas = msg.result;
+        succeed();
+        return;
+      }
+      if (msg.id === reqDeviceId) {
+        if (!msg.success) return fail(new Error('config/device_registry/list fehlgeschlagen'));
+        devices = msg.result;
         succeed();
       }
     });
@@ -199,11 +208,13 @@ function createAreaResolver(ha_url, ha_token, globalAreaAllowlistRaw) {
     if (cachePromise) return cachePromise;
     cachePromise = (async () => {
       // Registry-Zugriff immer über HA-WebSocket-Kommandos:
-      // config/entity_registry/list + config/area_registry/list
+      // config/entity_registry/list + config/area_registry/list + config/device_registry/list
       const wsData = await fetchRegistriesViaWebSocket(ha_url, ha_token);
       const entities = wsData.entities;
       const areas = wsData.areas;
+      const devices = wsData.devices;
       const entityToAreaId = new Map();
+      const deviceToAreaId = new Map();
       const areaIdToName = new Map();
       const tokenToAreaIds = new Map();
       if (Array.isArray(areas)) {
@@ -232,6 +243,25 @@ function createAreaResolver(ha_url, ha_token, globalAreaAllowlistRaw) {
           const areaId = String(e && e.area_id ? e.area_id : '').trim();
           if (!entityId || !areaId) continue;
           entityToAreaId.set(entityId, areaId);
+        }
+      }
+      if (Array.isArray(devices)) {
+        for (const d of devices) {
+          const deviceId = String(d && d.id ? d.id : '').trim();
+          const areaId = String(d && d.area_id ? d.area_id : '').trim();
+          if (!deviceId || !areaId) continue;
+          deviceToAreaId.set(deviceId, areaId);
+        }
+      }
+      if (Array.isArray(entities)) {
+        for (const e of entities) {
+          const entityId = normalizeKey(e && e.entity_id ? e.entity_id : '');
+          if (!entityId) continue;
+          if (entityToAreaId.has(entityId)) continue;
+          const deviceId = String(e && e.device_id ? e.device_id : '').trim();
+          if (!deviceId) continue;
+          const devArea = deviceToAreaId.get(deviceId);
+          if (devArea) entityToAreaId.set(entityId, devArea);
         }
       }
       return { entityToAreaId, areaIdToName, tokenToAreaIds };
