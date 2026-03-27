@@ -27,6 +27,10 @@ function buildAllowSets(entityRaw, domainRaw) {
   };
 }
 
+function normalizeKey(raw) {
+  return String(raw || '').trim().toLowerCase();
+}
+
 function isEntityAllowed(entityId, entitySet, domainSet) {
   const lid = String(entityId || '').toLowerCase();
   if (!lid || !/^[a-z0-9_]+\.[a-z0-9_.-]+$/i.test(lid)) return false;
@@ -48,8 +52,10 @@ function collectEntityIdsFromServiceData(data) {
   return out;
 }
 
-function assertServiceDataAllowed(serviceData, entitySet, domainSet, roomScope) {
-  if (entitySet === null && domainSet === null && !roomScope) return;
+async function assertServiceDataAllowed(serviceData, entitySet, domainSet, areaResolver, requestedAreaRaw) {
+  const needsAreaCheck =
+    !!(areaResolver && (areaResolver.hasGlobalScope || splitList(requestedAreaRaw).length > 0));
+  if (entitySet === null && domainSet === null && !needsAreaCheck) return;
   const ids = collectEntityIdsFromServiceData(serviceData);
   if (ids.length === 0) {
     throw new Error(
@@ -60,8 +66,9 @@ function assertServiceDataAllowed(serviceData, entitySet, domainSet, roomScope) 
     if (!isEntityAllowed(id, entitySet, domainSet)) {
       throw new Error('Entity nicht freigegeben für diesen MCP-Endpunkt: ' + id);
     }
-    if (roomScope && !isRoomMatch(id, id, roomScope)) {
-      throw new Error('Entity außerhalb des erlaubten Raum-Scope: ' + id);
+    if (areaResolver) {
+      const ok = await areaResolver.isEntityAllowedForArea(id, requestedAreaRaw);
+      if (!ok) throw new Error('Entity liegt außerhalb der erlaubten HA-Areas: ' + id);
     }
   }
 }
@@ -80,48 +87,12 @@ function timingSafeEqualString(a, b) {
   return crypto.timingSafeEqual(x, y);
 }
 
-function normalizeRoomToken(s) {
-  return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-function parseTokenRoomScopes(raw) {
-  const out = [];
-  const lines = String(raw || '')
-    .split(/\r?\n/)
-    .map((x) => x.trim())
-    .filter(Boolean);
-  for (const line of lines) {
-    const sep = line.indexOf('|');
-    if (sep <= 0) continue;
-    const token = line.slice(0, sep).trim();
-    const room = line.slice(sep + 1).trim();
-    if (!token || !room) continue;
-    out.push({ token, room });
-  }
-  return out;
-}
-
-function findRoomScopeByToken(token, entries) {
-  for (const e of entries) {
-    if (timingSafeEqualString(token, e.token)) return e.room;
-  }
-  return '';
-}
-
-function isRoomMatch(entityId, friendlyName, roomScope) {
-  if (!roomScope) return true;
-  const needle = normalizeRoomToken(roomScope);
-  if (!needle) return true;
-  const hay = normalizeRoomToken(String(entityId || '') + ' ' + String(friendlyName || ''));
-  return hay.includes(needle);
-}
-
 function textResult(obj) {
   const s = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
   return { content: [{ type: 'text', text: s.slice(0, 200000) }] };
 }
 
-async function fetchAllowedStates(ha_url, ha_token, entitySet, domainSet, roomScope) {
+async function fetchAllowedStates(ha_url, ha_token, entitySet, domainSet) {
   if (!ha_url || !ha_token) throw new Error('ha_url / ha_token im Add-on konfigurieren');
   const r = await fetch(ha_url + '/api/states', {
     headers: { Authorization: 'Bearer ' + ha_token },
@@ -134,30 +105,133 @@ async function fetchAllowedStates(ha_url, ha_token, entitySet, domainSet, roomSc
     const id = s.entity_id;
     if (!id || !isEntityAllowed(id, entitySet, domainSet)) continue;
     const att = s.attributes || {};
-    const friendly = att.friendly_name || id;
-    if (!isRoomMatch(id, friendly, roomScope)) continue;
     rowsAll.push({
       entity_id: id,
       state: s.state,
       domain: String(id).split('.')[0],
-      friendly_name: friendly,
+      friendly_name: att.friendly_name || id,
     });
   }
   return rowsAll;
 }
 
+function createAreaResolver(ha_url, ha_token, globalAreaAllowlistRaw) {
+  let cachePromise = null;
+  const hasGlobalScope = splitList(globalAreaAllowlistRaw).length > 0;
+
+  async function loadRegistries() {
+    if (cachePromise) return cachePromise;
+    cachePromise = (async () => {
+      const [entityRes, areaRes] = await Promise.all([
+        fetch(ha_url + '/api/config/entity_registry', { headers: { Authorization: 'Bearer ' + ha_token } }),
+        fetch(ha_url + '/api/config/area_registry', { headers: { Authorization: 'Bearer ' + ha_token } }),
+      ]);
+      if (!entityRes.ok || !areaRes.ok) {
+        throw new Error(
+          'HA-Registry-Zugriff fehlgeschlagen (entity_registry=' +
+            entityRes.status +
+            ', area_registry=' +
+            areaRes.status +
+            ')'
+        );
+      }
+      const entities = await entityRes.json();
+      const areas = await areaRes.json();
+      const entityToAreaId = new Map();
+      const areaIdToName = new Map();
+      const tokenToAreaIds = new Map();
+      if (Array.isArray(areas)) {
+        for (const a of areas) {
+          const id = String(a && a.area_id ? a.area_id : '').trim();
+          if (!id) continue;
+          const name = String((a && (a.name || a.alias || a.area_name)) || '').trim();
+          areaIdToName.set(id, name || id);
+          const t1 = normalizeKey(id);
+          const t2 = normalizeKey(name);
+          if (t1) {
+            const s = tokenToAreaIds.get(t1) || new Set();
+            s.add(id);
+            tokenToAreaIds.set(t1, s);
+          }
+          if (t2) {
+            const s = tokenToAreaIds.get(t2) || new Set();
+            s.add(id);
+            tokenToAreaIds.set(t2, s);
+          }
+        }
+      }
+      if (Array.isArray(entities)) {
+        for (const e of entities) {
+          const entityId = normalizeKey(e && e.entity_id ? e.entity_id : '');
+          const areaId = String(e && e.area_id ? e.area_id : '').trim();
+          if (!entityId || !areaId) continue;
+          entityToAreaId.set(entityId, areaId);
+        }
+      }
+      return { entityToAreaId, areaIdToName, tokenToAreaIds };
+    })();
+    return cachePromise;
+  }
+
+  async function resolveAreaIds(raw) {
+    const tokens = splitList(raw).map(normalizeKey).filter(Boolean);
+    if (!tokens.length) return null;
+    const reg = await loadRegistries();
+    const out = new Set();
+    for (const t of tokens) {
+      const ids = reg.tokenToAreaIds.get(t);
+      if (!ids || !ids.size) throw new Error('Unbekannte HA-Area: ' + t);
+      ids.forEach((id) => out.add(id));
+    }
+    return out;
+  }
+
+  return {
+    hasGlobalScope,
+    async isEntityAllowedForArea(entityId, requestedAreaRaw) {
+      const globalSet = await resolveAreaIds(globalAreaAllowlistRaw);
+      const reqSet = await resolveAreaIds(requestedAreaRaw);
+      if (!globalSet && !reqSet) return true;
+      const reg = await loadRegistries();
+      const areaId = reg.entityToAreaId.get(normalizeKey(entityId));
+      if (!areaId) return false;
+      if (globalSet && !globalSet.has(areaId)) return false;
+      if (reqSet && !reqSet.has(areaId)) return false;
+      return true;
+    },
+    async filterRows(rows, requestedAreaRaw) {
+      const globalSet = await resolveAreaIds(globalAreaAllowlistRaw);
+      const reqSet = await resolveAreaIds(requestedAreaRaw);
+      if (!globalSet && !reqSet) return rows;
+      const reg = await loadRegistries();
+      return rows
+        .map((r) => {
+          const areaId = reg.entityToAreaId.get(normalizeKey(r.entity_id)) || null;
+          const areaName = areaId ? reg.areaIdToName.get(areaId) || areaId : null;
+          return { ...r, area_id: areaId, area_name: areaName };
+        })
+        .filter((r) => {
+          if (!r.area_id) return false;
+          if (globalSet && !globalSet.has(r.area_id)) return false;
+          if (reqSet && !reqSet.has(r.area_id)) return false;
+          return true;
+        });
+    },
+  };
+}
+
 function createMcpServer(ctx) {
-  const { ha_url, ha_token, entitySet, domainSet, roomScope } = ctx;
+  const { ha_url, ha_token, entitySet, domainSet, mcp_area_allowlist } = ctx;
   const server = new McpServer({
     name: 'ha-chat-addon',
     version: '1.0.0',
   });
 
+  const areaResolver = createAreaResolver(ha_url, ha_token, mcp_area_allowlist);
   const scopeHint =
-    entitySet || domainSet
-      ? 'Nur freigegebene Entities/Domains (Add-on mcp_entity_allowlist / mcp_domain_allowlist).'
+    entitySet || domainSet || (typeof mcp_area_allowlist === 'string' && mcp_area_allowlist.trim())
+      ? 'Nur freigegebene Entities/Domains/Areas (Add-on mcp_*_allowlist).'
       : 'Alle Entities, die das konfigurierte HA-Token darf.';
-  const roomHint = roomScope ? ' Zusätzlich nur Geräte im Raum-Scope: "' + roomScope + '".' : '';
 
   server.registerPrompt(
     'ha_chat_scoped_assistant',
@@ -174,7 +248,6 @@ function createMcpServer(ctx) {
             text:
               'Du steuerst Home Assistant nur über die Tools list_entities, get_entity_state und call_service. ' +
               scopeHint +
-              roomHint +
               ' Nutze call_service mit domain, service und service_data (u. a. entity_id).',
           },
         },
@@ -190,12 +263,14 @@ function createMcpServer(ctx) {
       inputSchema: {
         limit: z.number().int().min(1).max(5000).optional().describe('Optionales Limit (ohne Angabe: alle)'),
         offset: z.number().int().min(0).optional().describe('Optionaler Startindex für Paging (Standard 0)'),
+        area: z.string().optional().describe('Optionaler HA-Area-Filter (Name oder area_id)'),
       },
     },
-    async ({ limit, offset }) => {
+    async ({ limit, offset, area }) => {
       const off = offset != null ? offset : 0;
       try {
-        const rowsAll = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet, roomScope);
+        const rowsRaw = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
+        const rowsAll = await areaResolver.filterRows(rowsRaw, area);
         const total = rowsAll.length;
         const rows = limit != null ? rowsAll.slice(off, off + limit) : rowsAll.slice(off);
         return textResult({
@@ -221,18 +296,20 @@ function createMcpServer(ctx) {
         query: z.string().optional().describe('Freitextsuche (z. B. c0.09, wohnzimmer, decke)'),
         domain: z.string().optional().describe('Optionaler Domain-Filter (z. B. light, switch, lock)'),
         state: z.string().optional().describe('Optionaler State-Filter (z. B. on, off, unavailable)'),
+        area: z.string().optional().describe('Optionaler HA-Area-Filter (Name oder area_id)'),
         limit: z.number().int().min(1).max(5000).optional().describe('Max. Treffer (Standard 50)'),
         offset: z.number().int().min(0).optional().describe('Startindex für Paging (Standard 0)'),
       },
     },
-    async ({ query, domain, state, limit, offset }) => {
+    async ({ query, domain, state, area, limit, offset }) => {
       const q = String(query || '').trim().toLowerCase();
       const d = String(domain || '').trim().toLowerCase();
       const s = String(state || '').trim().toLowerCase();
       const lim = limit != null ? limit : 50;
       const off = offset != null ? offset : 0;
       try {
-        const rowsAll = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet, roomScope);
+        const rowsRaw = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
+        const rowsAll = await areaResolver.filterRows(rowsRaw, area);
         const filtered = rowsAll.filter((r) => {
           if (d && String(r.domain || '').toLowerCase() !== d) return false;
           if (s && String(r.state || '').toLowerCase() !== s) return false;
@@ -251,6 +328,7 @@ function createMcpServer(ctx) {
           query: q || null,
           domain: d || null,
           state: s || null,
+          area: area ? String(area).trim() : null,
           entities: rows,
         });
       } catch (e) {
@@ -265,9 +343,10 @@ function createMcpServer(ctx) {
       description: 'Liest den State einer einzelnen Entity (nur wenn freigegeben).',
       inputSchema: {
         entity_id: z.string().describe('z. B. light.wohnzimmer'),
+        area: z.string().optional().describe('Optionaler HA-Area-Filter (Name oder area_id)'),
       },
     },
-    async ({ entity_id }) => {
+    async ({ entity_id, area }) => {
       if (!ha_url || !ha_token) {
         return textResult({ error: 'ha_url / ha_token im Add-on konfigurieren' });
       }
@@ -275,8 +354,11 @@ function createMcpServer(ctx) {
       if (!isEntityAllowed(id, entitySet, domainSet)) {
         return textResult({ error: 'Entity nicht freigegeben oder ungültig: ' + id });
       }
-      if (roomScope && !isRoomMatch(id, id, roomScope)) {
-        return textResult({ error: 'Entity liegt außerhalb des erlaubten Raum-Scope: ' + id });
+      try {
+        const areaOk = await areaResolver.isEntityAllowedForArea(id, area);
+        if (!areaOk) return textResult({ error: 'Entity liegt außerhalb der erlaubten HA-Area: ' + id });
+      } catch (e) {
+        return textResult({ error: String(e.message || e) });
       }
       try {
         const r = await fetch(ha_url + '/api/states/' + encodeURIComponent(id), {
@@ -300,9 +382,10 @@ function createMcpServer(ctx) {
         domain: z.string().describe('z. B. light, switch, cover'),
         service: z.string().describe('z. B. turn_on, turn_off, toggle'),
         service_data: z.record(z.string(), z.unknown()).optional().describe('JSON-Objekt, oft mit entity_id'),
+        area: z.string().optional().describe('Optionaler HA-Area-Filter (Name oder area_id)'),
       },
     },
-    async ({ domain, service, service_data }) => {
+    async ({ domain, service, service_data, area }) => {
       if (!ha_url || !ha_token) {
         return textResult({ error: 'ha_url / ha_token im Add-on konfigurieren' });
       }
@@ -313,7 +396,7 @@ function createMcpServer(ctx) {
       }
       const data = service_data && typeof service_data === 'object' ? service_data : {};
       try {
-        assertServiceDataAllowed(data, entitySet, domainSet, roomScope);
+        await assertServiceDataAllowed(data, entitySet, domainSet, areaResolver, area);
       } catch (e) {
         return textResult({ error: e.message || String(e) });
       }
@@ -351,32 +434,19 @@ async function handleMcpHttp(req, res, opts, parsedBody) {
     res.end(JSON.stringify({ error: 'MCP im Add-on deaktiviert (mcp_enabled: false)' }));
     return;
   }
-  const token = getBearerToken(req);
-  const scopedEntries = parseTokenRoomScopes(opts.mcp_token_room_scopes);
-  const scopedRoom = token ? findRoomScopeByToken(token, scopedEntries) : '';
-  const hasGlobal = !!opts.mcp_bearer_token;
-  const hasScoped = scopedEntries.length > 0;
-
-  if (!hasGlobal && !hasScoped) {
+  if (!opts.mcp_bearer_token) {
     res.writeHead(503, { 'Content-Type': 'application/json' });
     res.end(
       JSON.stringify({
-        error: 'MCP nicht konfiguriert: mcp_bearer_token oder mcp_token_room_scopes setzen.',
+        error: 'MCP nicht konfiguriert: mcp_bearer_token im Add-on setzen (geheimer Bearer für Clients).',
       })
     );
     return;
   }
-  let effectiveRoomScope = '';
-  let authorized = false;
-  if (token && scopedRoom) {
-    authorized = true;
-    effectiveRoomScope = scopedRoom;
-  } else if (token && hasGlobal && timingSafeEqualString(token, opts.mcp_bearer_token)) {
-    authorized = true;
-  }
-  if (!authorized) {
+  const token = getBearerToken(req);
+  if (!token || !timingSafeEqualString(token, opts.mcp_bearer_token)) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Unauthorized: gültiger MCP Bearer erforderlich' }));
+    res.end(JSON.stringify({ error: 'Unauthorized: Bearer mcp_bearer_token erforderlich' }));
     return;
   }
 
@@ -386,7 +456,7 @@ async function handleMcpHttp(req, res, opts, parsedBody) {
     ha_token: opts.ha_token,
     entitySet,
     domainSet,
-    roomScope: effectiveRoomScope,
+    mcp_area_allowlist: opts.mcp_area_allowlist,
   };
 
   let body = parsedBody;

@@ -17,17 +17,17 @@ ingress: true
 options:
   n8n_inference_webhook_url: ""
   n8n_sync_webhook_url: ""
-  system_prompt: "Du bist HA Chat, ein hilfreicher Assistent für Home Assistant. Antworte kurz, konkret und auf Deutsch. Nutze nur sichere, explizit angefragte Aktionen."
   ha_url: ""
   ha_token: ""
+  system_prompt: "Du bist ein hilfreicher Home-Assistant-Assistent. Antworte knapp und präzise auf Deutsch. Nutze verfügbare Tools nur wenn nötig und beachte Bereichs-/Raumbeschränkungen."
   graph_tenant_id: ""
   graph_client_id: ""
   graph_client_secret: ""
   mcp_enabled: true
   mcp_bearer_token: ""
-  mcp_token_room_scopes: ""
   mcp_entity_allowlist: ""
   mcp_domain_allowlist: ""
+  mcp_area_allowlist: ""
   prompt_suggestions:
     - "Was kann ich dich fragen?"
     - "Welche Lichter sind gerade an?"
@@ -36,16 +36,16 @@ options:
 schema:
   n8n_inference_webhook_url: str
   n8n_sync_webhook_url: str
-  system_prompt: str
   ha_url: str
   ha_token: str
+  system_prompt: str
   graph_tenant_id: str
   graph_client_id: str
   graph_client_secret: str
   mcp_enabled: bool
   mcp_bearer_token: password
-  mcp_token_room_scopes: str
   mcp_entity_allowlist: str
   mcp_domain_allowlist: str
+  mcp_area_allowlist: str
   prompt_suggestions:
     - str
