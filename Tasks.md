@@ -85,6 +85,18 @@
 - [x] MCP `search_entities` auf produktionsnahe Suchbibliothek umgestellt (`minisearch`, BM25/Fuzzy, gewichtete Felder)
 - [x] MCP `search_entities`: `top_k` ergänzt und persistenter In-Memory-Index-Cache (TTL + Signatur, Scope-basiert) implementiert
 - [x] Such-Synonyme robust normalisiert (gestemmte Keys), damit `klimaanlage` konsistent `Klimagerät`-Treffer liefert
+- [x] Azure OpenAI Embedding-Settings in Add-on-Config ergänzt (`config.yaml`, `server.js`)
+- [x] MCP `search_entities` auf Hybrid-Retrieval erweitert (vollständige Entity-Indexierung + optionales Embedding-Re-Ranking)
+- [x] Embedding-Caching (TTL, signaturbasiert) für MCP-Retrieval integriert
+- [x] Lokalen FAISS-Dateiindex für Embeddings integriert (persistente `.faiss` + Metadaten im Data-Verzeichnis)
+- [x] Add-on-Settings für FAISS-Storage ergänzt (`mcp_search_faiss_enabled`, `mcp_search_faiss_index_dir`)
+- [x] Docker-Image um Python + `faiss-cpu`/`numpy` erweitert und FAISS-Worker-Script eingebunden
+- [x] MCP-Suche auf Embedding+FAISS-only umgestellt (MiniSearch/lexical Hybrid entfernt, kein `use_embeddings`-Schalter mehr)
+- [x] `minisearch`-Dependency aus Add-on entfernt (nur noch Embeddings + FAISS im Suchpfad)
+- [x] Indexing-/Retrieval-Logik aus `mcp-handler.js` in separates Modul ausgelagert (`ha_chat/search/entity-search.js`)
+- [x] `mcp-handler.js` auf Search-Service-Nutzung refactored
+- [x] Dockerfile ergänzt: `search/`-Verzeichnis wird in den Container kopiert
+- [x] Search-Bereinigung auf Classic-RAG: Synonym-/Tokenize-Query-Expansion aus `search/entity-search.js` entfernt (nur Raw-Query-Embedding + FAISS)
 
 ## Nachfolgende Schritte
 
@@ -96,3 +108,6 @@
 - [ ] Optional: Embedding-Retrieval für `search_entities` ergänzen (vektorbasiert, externe DB oder lokaler Mini-Index)
 - [ ] Optional: Query-Analytics hinzufügen (anonymisierte Top-Queries/No-Result-Rate) zur gezielten Synonympflege
 - [ ] Optional: Cache-Metriken exponieren (`cache_hit`, `cache_miss`, `cache_size`) für Betriebsbeobachtung
+- [ ] Optional: Embedding-Batchgröße/TTL konfigurierbar machen (betriebsspezifisches Tuning)
+- [ ] Optional: Hintergrund-Rebuild für FAISS-Index (asynchron), um erste Query-Latenz zu reduzieren
+- [ ] Optional: Search-Modul weiter in `embedding-client`, `faiss-store`, `query-normalizer` zerlegen

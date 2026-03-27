@@ -74,6 +74,10 @@ Der Server bietet **Streamable HTTP** (stateless) unter **`/api/mcp`** – **der
 - **mcp_entity_allowlist** – kommagetrennt oder zeilenweise: nur diese `entity_id`-Werte (z. B. `light.wohnzimmer,switch.kueche`).
 - **mcp_domain_allowlist** – z. B. `light,switch` – nur Entities dieser Domains.
 - **mcp_area_allowlist** – nur Native HA Areas (Name oder `area_id`), z. B. `C0.09` oder `8f0d...`.
+- **mcp_search_embeddings_top_k** – Anzahl Top-Kandidaten für FAISS-Embedding-Retrieval (Standard 200).
+- **mcp_search_faiss_enabled** – aktiviert lokalen FAISS-Dateiindex für Embedding-Retrieval.
+- **mcp_search_faiss_index_dir** – Pfad für persistente FAISS-Indexdateien (Standard `/data/mcp-faiss`).
+- **azure_openai_endpoint** / **azure_openai_api_key** / **azure_openai_embedding_deployment** / **azure_openai_api_version** – Azure OpenAI Embedding-Konfiguration.
 - Beide Felder gesetzt: eine Entity muss **beiden** Bedingungen genügen (ID in Liste **und** Domain erlaubt).
 - Leer lassen: alles, was das **HA-Token** darf.
 
@@ -81,6 +85,7 @@ Der Server bietet **Streamable HTTP** (stateless) unter **`/api/mcp`** – **der
 
 - `list_entities`: gibt ohne `limit` **alle** erlaubten Entities zurück (`total`, `returned`, `has_more`), optional `area`.
 - `search_entities`: gezielte Suche über `query` (Name/Entity-ID), optional `domain`, `state`, `area`, plus `limit`/`offset`.
+- `search_entities`: vollständige Entity-Indexierung im Scope, optional `top_k`; Retrieval läuft ausschließlich über Azure-Embeddings + lokalen FAISS-Dateiindex.
 - `get_entity_state` / `call_service`: optionaler `area`-Parameter für zusätzlichen Room-Scope.
 - `call_service`: Ziel-Entities immer in `service_data.entity_id` übergeben (nicht auf Top-Level).
 - Area-/Registry-Auflösung erfolgt über Home-Assistant-WebSocket (`config/entity_registry/list`, `config/area_registry/list`).

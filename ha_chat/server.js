@@ -59,6 +59,15 @@ function getOptions() {
       mcp_entity_allowlist:      (opts.mcp_entity_allowlist      || '').trim(),
       mcp_domain_allowlist:      (opts.mcp_domain_allowlist      || '').trim(),
       mcp_area_allowlist:        (opts.mcp_area_allowlist        || '').trim(),
+      mcp_search_embeddings_top_k:   Number.isFinite(Number(opts.mcp_search_embeddings_top_k))
+        ? Number(opts.mcp_search_embeddings_top_k)
+        : 200,
+      mcp_search_faiss_enabled: opts.mcp_search_faiss_enabled !== false,
+      mcp_search_faiss_index_dir: (opts.mcp_search_faiss_index_dir || '').trim() || path.join(DATA_DIR, 'mcp-faiss'),
+      azure_openai_endpoint:         (opts.azure_openai_endpoint || '').trim().replace(/\/$/, ''),
+      azure_openai_api_key:          (opts.azure_openai_api_key || '').trim(),
+      azure_openai_embedding_deployment: (opts.azure_openai_embedding_deployment || '').trim(),
+      azure_openai_api_version:      (opts.azure_openai_api_version || '').trim() || '2024-02-15-preview',
     };
   } catch (e) {
     if (e.code !== 'ENOENT') console.log('[HA Chat] options.json:', e.message);
@@ -78,6 +87,14 @@ function getOptions() {
     mcp_entity_allowlist:      (process.env.MCP_ENTITY_ALLOWLIST      || '').trim(),
     mcp_domain_allowlist:      (process.env.MCP_DOMAIN_ALLOWLIST      || '').trim(),
     mcp_area_allowlist:        (process.env.MCP_AREA_ALLOWLIST        || '').trim(),
+    mcp_search_embeddings_top_k: Number(process.env.MCP_SEARCH_EMBEDDINGS_TOP_K || 200),
+    mcp_search_faiss_enabled:
+      process.env.MCP_SEARCH_FAISS_ENABLED !== '0' && process.env.MCP_SEARCH_FAISS_ENABLED !== 'false',
+    mcp_search_faiss_index_dir: (process.env.MCP_SEARCH_FAISS_INDEX_DIR || '').trim() || path.join(DATA_DIR, 'mcp-faiss'),
+    azure_openai_endpoint: (process.env.AZURE_OPENAI_ENDPOINT || '').trim().replace(/\/$/, ''),
+    azure_openai_api_key: (process.env.AZURE_OPENAI_API_KEY || '').trim(),
+    azure_openai_embedding_deployment: (process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT || '').trim(),
+    azure_openai_api_version: (process.env.AZURE_OPENAI_API_VERSION || '').trim() || '2024-02-15-preview',
   };
 }
 

@@ -28,6 +28,13 @@ options:
   mcp_entity_allowlist: ""
   mcp_domain_allowlist: ""
   mcp_area_allowlist: ""
+  mcp_search_embeddings_top_k: 200
+  mcp_search_faiss_enabled: true
+  mcp_search_faiss_index_dir: ""
+  azure_openai_endpoint: ""
+  azure_openai_api_key: ""
+  azure_openai_embedding_deployment: ""
+  azure_openai_api_version: "2024-02-15-preview"
   prompt_suggestions:
     - "Was kann ich dich fragen?"
     - "Welche Lichter sind gerade an?"
@@ -47,5 +54,12 @@ schema:
   mcp_entity_allowlist: str
   mcp_domain_allowlist: str
   mcp_area_allowlist: str
+  mcp_search_embeddings_top_k: int
+  mcp_search_faiss_enabled: bool
+  mcp_search_faiss_index_dir: str
+  azure_openai_endpoint: str
+  azure_openai_api_key: password
+  azure_openai_embedding_deployment: str
+  azure_openai_api_version: str
   prompt_suggestions:
     - str
