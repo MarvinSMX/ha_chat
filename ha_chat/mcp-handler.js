@@ -48,8 +48,8 @@ function collectEntityIdsFromServiceData(data) {
   return out;
 }
 
-function assertServiceDataAllowed(serviceData, entitySet, domainSet) {
-  if (entitySet === null && domainSet === null) return;
+function assertServiceDataAllowed(serviceData, entitySet, domainSet, roomScope) {
+  if (entitySet === null && domainSet === null && !roomScope) return;
   const ids = collectEntityIdsFromServiceData(serviceData);
   if (ids.length === 0) {
     throw new Error(
@@ -59,6 +59,9 @@ function assertServiceDataAllowed(serviceData, entitySet, domainSet) {
   for (const id of ids) {
     if (!isEntityAllowed(id, entitySet, domainSet)) {
       throw new Error('Entity nicht freigegeben für diesen MCP-Endpunkt: ' + id);
+    }
+    if (roomScope && !isRoomMatch(id, id, roomScope)) {
+      throw new Error('Entity außerhalb des erlaubten Raum-Scope: ' + id);
     }
   }
 }
@@ -77,12 +80,48 @@ function timingSafeEqualString(a, b) {
   return crypto.timingSafeEqual(x, y);
 }
 
+function normalizeRoomToken(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function parseTokenRoomScopes(raw) {
+  const out = [];
+  const lines = String(raw || '')
+    .split(/\r?\n/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  for (const line of lines) {
+    const sep = line.indexOf('|');
+    if (sep <= 0) continue;
+    const token = line.slice(0, sep).trim();
+    const room = line.slice(sep + 1).trim();
+    if (!token || !room) continue;
+    out.push({ token, room });
+  }
+  return out;
+}
+
+function findRoomScopeByToken(token, entries) {
+  for (const e of entries) {
+    if (timingSafeEqualString(token, e.token)) return e.room;
+  }
+  return '';
+}
+
+function isRoomMatch(entityId, friendlyName, roomScope) {
+  if (!roomScope) return true;
+  const needle = normalizeRoomToken(roomScope);
+  if (!needle) return true;
+  const hay = normalizeRoomToken(String(entityId || '') + ' ' + String(friendlyName || ''));
+  return hay.includes(needle);
+}
+
 function textResult(obj) {
   const s = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
   return { content: [{ type: 'text', text: s.slice(0, 200000) }] };
 }
 
-async function fetchAllowedStates(ha_url, ha_token, entitySet, domainSet) {
+async function fetchAllowedStates(ha_url, ha_token, entitySet, domainSet, roomScope) {
   if (!ha_url || !ha_token) throw new Error('ha_url / ha_token im Add-on konfigurieren');
   const r = await fetch(ha_url + '/api/states', {
     headers: { Authorization: 'Bearer ' + ha_token },
@@ -95,18 +134,20 @@ async function fetchAllowedStates(ha_url, ha_token, entitySet, domainSet) {
     const id = s.entity_id;
     if (!id || !isEntityAllowed(id, entitySet, domainSet)) continue;
     const att = s.attributes || {};
+    const friendly = att.friendly_name || id;
+    if (!isRoomMatch(id, friendly, roomScope)) continue;
     rowsAll.push({
       entity_id: id,
       state: s.state,
       domain: String(id).split('.')[0],
-      friendly_name: att.friendly_name || id,
+      friendly_name: friendly,
     });
   }
   return rowsAll;
 }
 
 function createMcpServer(ctx) {
-  const { ha_url, ha_token, entitySet, domainSet } = ctx;
+  const { ha_url, ha_token, entitySet, domainSet, roomScope } = ctx;
   const server = new McpServer({
     name: 'ha-chat-addon',
     version: '1.0.0',
@@ -116,6 +157,7 @@ function createMcpServer(ctx) {
     entitySet || domainSet
       ? 'Nur freigegebene Entities/Domains (Add-on mcp_entity_allowlist / mcp_domain_allowlist).'
       : 'Alle Entities, die das konfigurierte HA-Token darf.';
+  const roomHint = roomScope ? ' Zusätzlich nur Geräte im Raum-Scope: "' + roomScope + '".' : '';
 
   server.registerPrompt(
     'ha_chat_scoped_assistant',
@@ -132,6 +174,7 @@ function createMcpServer(ctx) {
             text:
               'Du steuerst Home Assistant nur über die Tools list_entities, get_entity_state und call_service. ' +
               scopeHint +
+              roomHint +
               ' Nutze call_service mit domain, service und service_data (u. a. entity_id).',
           },
         },
@@ -152,7 +195,7 @@ function createMcpServer(ctx) {
     async ({ limit, offset }) => {
       const off = offset != null ? offset : 0;
       try {
-        const rowsAll = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
+        const rowsAll = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet, roomScope);
         const total = rowsAll.length;
         const rows = limit != null ? rowsAll.slice(off, off + limit) : rowsAll.slice(off);
         return textResult({
@@ -189,7 +232,7 @@ function createMcpServer(ctx) {
       const lim = limit != null ? limit : 50;
       const off = offset != null ? offset : 0;
       try {
-        const rowsAll = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
+        const rowsAll = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet, roomScope);
         const filtered = rowsAll.filter((r) => {
           if (d && String(r.domain || '').toLowerCase() !== d) return false;
           if (s && String(r.state || '').toLowerCase() !== s) return false;
@@ -232,6 +275,9 @@ function createMcpServer(ctx) {
       if (!isEntityAllowed(id, entitySet, domainSet)) {
         return textResult({ error: 'Entity nicht freigegeben oder ungültig: ' + id });
       }
+      if (roomScope && !isRoomMatch(id, id, roomScope)) {
+        return textResult({ error: 'Entity liegt außerhalb des erlaubten Raum-Scope: ' + id });
+      }
       try {
         const r = await fetch(ha_url + '/api/states/' + encodeURIComponent(id), {
           headers: { Authorization: 'Bearer ' + ha_token },
@@ -267,7 +313,7 @@ function createMcpServer(ctx) {
       }
       const data = service_data && typeof service_data === 'object' ? service_data : {};
       try {
-        assertServiceDataAllowed(data, entitySet, domainSet);
+        assertServiceDataAllowed(data, entitySet, domainSet, roomScope);
       } catch (e) {
         return textResult({ error: e.message || String(e) });
       }
@@ -305,19 +351,32 @@ async function handleMcpHttp(req, res, opts, parsedBody) {
     res.end(JSON.stringify({ error: 'MCP im Add-on deaktiviert (mcp_enabled: false)' }));
     return;
   }
-  if (!opts.mcp_bearer_token) {
+  const token = getBearerToken(req);
+  const scopedEntries = parseTokenRoomScopes(opts.mcp_token_room_scopes);
+  const scopedRoom = token ? findRoomScopeByToken(token, scopedEntries) : '';
+  const hasGlobal = !!opts.mcp_bearer_token;
+  const hasScoped = scopedEntries.length > 0;
+
+  if (!hasGlobal && !hasScoped) {
     res.writeHead(503, { 'Content-Type': 'application/json' });
     res.end(
       JSON.stringify({
-        error: 'MCP nicht konfiguriert: mcp_bearer_token im Add-on setzen (geheimer Bearer für Clients).',
+        error: 'MCP nicht konfiguriert: mcp_bearer_token oder mcp_token_room_scopes setzen.',
       })
     );
     return;
   }
-  const token = getBearerToken(req);
-  if (!token || !timingSafeEqualString(token, opts.mcp_bearer_token)) {
+  let effectiveRoomScope = '';
+  let authorized = false;
+  if (token && scopedRoom) {
+    authorized = true;
+    effectiveRoomScope = scopedRoom;
+  } else if (token && hasGlobal && timingSafeEqualString(token, opts.mcp_bearer_token)) {
+    authorized = true;
+  }
+  if (!authorized) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Unauthorized: Bearer mcp_bearer_token erforderlich' }));
+    res.end(JSON.stringify({ error: 'Unauthorized: gültiger MCP Bearer erforderlich' }));
     return;
   }
 
@@ -327,6 +386,7 @@ async function handleMcpHttp(req, res, opts, parsedBody) {
     ha_token: opts.ha_token,
     entitySet,
     domainSet,
+    roomScope: effectiveRoomScope,
   };
 
   let body = parsedBody;

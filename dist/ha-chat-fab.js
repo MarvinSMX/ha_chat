@@ -13,6 +13,8 @@
  *   welcome_title, welcome_subtitle: Empty-State (optional)
  *   welcome_image_url: optional eigenes Bild statt eingebettetem Willkommens-Emoji (PNG)
  *   ha_bearer_token: optional Long-Lived Token (wie curl -H "Authorization: Bearer …")
+ *   mcp_bearer_token: optional MCP-Token, wird an /api/chat und /api/execute_action weitergereicht
+ *   room_scope: optional Raum-Scope (z. B. "C0.09"), wird an Backend/N8N weitergereicht
  *   addon_direct_url: optional http(s)://host:PORT – umgeht HA-Ingress (wie Zircon3D-Workaround)
  */
 
@@ -379,6 +381,26 @@
       const fromYaml = this._yamlBearerToken();
       if (fromYaml) return fromYaml;
       return this._haAccessToken();
+    }
+
+    _mcpBearerToken() {
+      const c = this._config || {};
+      const keys = ['mcp_bearer_token', 'room_mcp_bearer_token'];
+      for (let i = 0; i < keys.length; i++) {
+        const n = this._normalizeBearerValue(c[keys[i]]);
+        if (n) return n;
+      }
+      return '';
+    }
+
+    _roomScope() {
+      const c = this._config || {};
+      const keys = ['room_scope', 'mcp_room_scope', 'room', 'mcp_room'];
+      for (let i = 0; i < keys.length; i++) {
+        const v = c[keys[i]];
+        if (typeof v === 'string' && v.trim()) return v.trim();
+      }
+      return '';
     }
 
     _fabTitle() {
@@ -869,10 +891,15 @@
       const self = this;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 120000);
+      const payload = { message: text, session_id: self._sessionId, chat_id: self._chatId };
+      const roomScope = self._roomScope();
+      const mcpToken = self._mcpBearerToken();
+      if (roomScope) payload.room_scope = roomScope;
+      if (mcpToken) payload.mcp_bearer_token = mcpToken;
       this._fetchApi('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, session_id: self._sessionId, chat_id: self._chatId }),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       })
         .then((r) => { clearTimeout(timer); return parseJsonResponse(r); })
@@ -916,10 +943,15 @@
       const sendBtn = this._popupEl && this._popupEl.querySelector('#fab-send');
       if (sendBtn) sendBtn.disabled = true;
       const self = this;
+      const payload = { utterance: utterance, session_id: self._sessionId, chat_id: self._chatId };
+      const roomScope = self._roomScope();
+      const mcpToken = self._mcpBearerToken();
+      if (roomScope) payload.room_scope = roomScope;
+      if (mcpToken) payload.mcp_bearer_token = mcpToken;
       this._fetchApi('/api/execute_action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ utterance: utterance, session_id: self._sessionId, chat_id: self._chatId }),
+        body: JSON.stringify(payload),
       })
         .then((r) => parseJsonResponse(r))
         .then((d) => {

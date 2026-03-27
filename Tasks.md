@@ -61,6 +61,9 @@
 - [x] App Empty-State: Prompt-Suggestions zentriert direkt unter dem HA-Logo positioniert
 - [x] MCP `list_entities`: ohne `limit` jetzt alle Entities; zusätzlich `total/returned/has_more` + optional `offset` für Paging
 - [x] MCP `search_entities`: gezielte Suche nach `query` (friendly_name/entity_id) + optionale Filter `domain`/`state`
+- [x] Add-on-Setting `system_prompt` eingeführt (Default vorausgefüllt), wird automatisch an Chat/Action-Webhook gesendet
+- [x] MCP: raumgebundene Tokens über `mcp_token_room_scopes` (`token|raum`) inkl. Raumfilter bei `list/search/get/call_service`
+- [x] FAB: optionale Übergabe `room_scope` + `mcp_bearer_token` an Backend/N8N ergänzt
 
 ## Nachfolgende Schritte
 

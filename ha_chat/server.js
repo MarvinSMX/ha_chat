@@ -32,6 +32,7 @@ const DEFAULT_SUGGESTIONS = [
   'Zeig mir den Status der Heizung',
   'Welche Geräte sind aktiv?',
 ];
+const DEFAULT_SYSTEM_PROMPT = 'Du bist HA Chat, ein hilfreicher Assistent für Home Assistant. Antworte kurz, konkret und auf Deutsch. Nutze nur sichere, explizit angefragte Aktionen.';
 
 function getOptions() {
   try {
@@ -49,8 +50,10 @@ function getOptions() {
       graph_client_id:           (opts.graph_client_id           || '').trim(),
       graph_client_secret:       (opts.graph_client_secret       || '').trim(),
       prompt_suggestions: suggestions,
+      system_prompt:             typeof opts.system_prompt === 'string' ? opts.system_prompt : DEFAULT_SYSTEM_PROMPT,
       mcp_enabled:               opts.mcp_enabled !== false,
       mcp_bearer_token:          (opts.mcp_bearer_token          || '').trim(),
+      mcp_token_room_scopes:     (opts.mcp_token_room_scopes     || ''),
       mcp_entity_allowlist:      (opts.mcp_entity_allowlist      || '').trim(),
       mcp_domain_allowlist:      (opts.mcp_domain_allowlist      || '').trim(),
     };
@@ -66,8 +69,10 @@ function getOptions() {
     graph_client_id:           (process.env.GRAPH_CLIENT_ID           || '').trim(),
     graph_client_secret:       (process.env.GRAPH_CLIENT_SECRET       || '').trim(),
     prompt_suggestions: DEFAULT_SUGGESTIONS,
+    system_prompt:             (process.env.SYSTEM_PROMPT              || DEFAULT_SYSTEM_PROMPT),
     mcp_enabled:               process.env.MCP_ENABLED !== '0' && process.env.MCP_ENABLED !== 'false',
     mcp_bearer_token:          (process.env.MCP_BEARER_TOKEN          || '').trim(),
+    mcp_token_room_scopes:     (process.env.MCP_TOKEN_ROOM_SCOPES     || ''),
     mcp_entity_allowlist:      (process.env.MCP_ENTITY_ALLOWLIST      || '').trim(),
     mcp_domain_allowlist:      (process.env.MCP_DOMAIN_ALLOWLIST      || '').trim(),
   };
@@ -386,6 +391,7 @@ const server = http.createServer(async (req, res) => {
       n8n_inference_webhook_url: opts.n8n_inference_webhook_url,
       sync_enabled: !!opts.n8n_sync_webhook_url,
       prompt_suggestions: opts.prompt_suggestions,
+      system_prompt: opts.system_prompt || DEFAULT_SYSTEM_PROMPT,
     }));
     return;
   }
@@ -542,6 +548,10 @@ const server = http.createServer(async (req, res) => {
     const sessionId = chatId || (data.session_id ? String(data.session_id) : '');
     appendMessage(userId, chatId, 'user', message);
     const payload = { message, session_id: sessionId };
+    const opts = getOptions();
+    payload.system_prompt = opts.system_prompt || DEFAULT_SYSTEM_PROMPT;
+    if (typeof data.room_scope === 'string' && data.room_scope.trim()) payload.room_scope = data.room_scope.trim();
+    if (typeof data.mcp_bearer_token === 'string' && data.mcp_bearer_token.trim()) payload.mcp_bearer_token = data.mcp_bearer_token.trim();
     try {
       const n8n = await callN8n(inferenceUrl, payload, 'chat');
       const answer = n8n.data && typeof n8n.data.answer === 'string' ? n8n.data.answer : '';
@@ -684,6 +694,10 @@ const server = http.createServer(async (req, res) => {
     const sessionId = chatId || (data.session_id ? String(data.session_id) : '');
     appendMessage(userId, chatId, 'user', utterance);
     const actionPayload = { message: utterance, session_id: sessionId };
+    const opts = getOptions();
+    actionPayload.system_prompt = opts.system_prompt || DEFAULT_SYSTEM_PROMPT;
+    if (typeof data.room_scope === 'string' && data.room_scope.trim()) actionPayload.room_scope = data.room_scope.trim();
+    if (typeof data.mcp_bearer_token === 'string' && data.mcp_bearer_token.trim()) actionPayload.mcp_bearer_token = data.mcp_bearer_token.trim();
     try {
       const n8n = await callN8n(inferenceUrl, actionPayload, 'action');
       const answer = n8n.data && (n8n.data.answer != null ? n8n.data.answer : n8n.data.response);
@@ -856,12 +870,13 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, '0.0.0.0', () => {
   const inferenceUrl = getInferenceUrl();
   const o = getOptions();
+  const hasScopedTokens = !!String(o.mcp_token_room_scopes || '').trim();
   console.log('HA Chat (Frontend + N8N Proxy + MCP) auf http://0.0.0.0:' + PORT);
   console.log('[HA Chat] N8N Inference-Webhook: ' + (inferenceUrl ? 'gesetzt (' + inferenceUrl.split('/')[0] + '//' + (inferenceUrl.split('/')[2] || '') + '/…)' : 'nicht konfiguriert'));
-  if (o.mcp_enabled && o.mcp_bearer_token) {
-    console.log('[HA Chat] MCP Streamable HTTP: /api/mcp (Bearer mcp_bearer_token; stateless)');
+  if (o.mcp_enabled && (o.mcp_bearer_token || hasScopedTokens)) {
+    console.log('[HA Chat] MCP Streamable HTTP: /api/mcp (global Bearer oder token|room Scopes; stateless)');
   } else if (o.mcp_enabled) {
-    console.log('[HA Chat] MCP: mcp_bearer_token setzen, sonst Endpoint deaktiviert (503).');
+    console.log('[HA Chat] MCP: mcp_bearer_token oder mcp_token_room_scopes setzen, sonst Endpoint deaktiviert (503).');
   } else {
     console.log('[HA Chat] MCP: aus (mcp_enabled: false)');
   }

@@ -1,6 +1,6 @@
 name: "Dokumentation"
 description: "Dokumentation für Home Assistant"
-version: "1.0.108"
+version: "1.0.109"
 slug: "ha_chat"
 init: false
 arch:
@@ -17,6 +17,7 @@ ingress: true
 options:
   n8n_inference_webhook_url: ""
   n8n_sync_webhook_url: ""
+  system_prompt: "Du bist HA Chat, ein hilfreicher Assistent für Home Assistant. Antworte kurz, konkret und auf Deutsch. Nutze nur sichere, explizit angefragte Aktionen."
   ha_url: ""
   ha_token: ""
   graph_tenant_id: ""
@@ -24,6 +25,7 @@ options:
   graph_client_secret: ""
   mcp_enabled: true
   mcp_bearer_token: ""
+  mcp_token_room_scopes: ""
   mcp_entity_allowlist: ""
   mcp_domain_allowlist: ""
   prompt_suggestions:
@@ -34,6 +36,7 @@ options:
 schema:
   n8n_inference_webhook_url: str
   n8n_sync_webhook_url: str
+  system_prompt: str
   ha_url: str
   ha_token: str
   graph_tenant_id: str
@@ -41,6 +44,7 @@ schema:
   graph_client_secret: str
   mcp_enabled: bool
   mcp_bearer_token: password
+  mcp_token_room_scopes: str
   mcp_entity_allowlist: str
   mcp_domain_allowlist: str
   prompt_suggestions:

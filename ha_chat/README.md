@@ -11,6 +11,7 @@ Inhalt von `addon/ha_chat/ha_chat/` ins Add-on-Verzeichnis kopieren (z. B. `ad
 ## Konfiguration
 
 - **N8N Inference-Webhook-URL** – Endpoint für Chat-Anfragen.
+- **System Prompt** – Standard-Systemprompt für Chat/Action-Webhook; ist im Add-on-Setting vorausgefüllt und kann dort angepasst werden.
 - **HA URL** (optional) – z. B. `http://homeassistant.local:8123`. Nur nötig für Entity-Steuerung (Buttons im Chat).
 - **HA Token** (optional) – Long-Lived Access Token von Home Assistant. Unter **Profil** → **Sicherheit** → **Token erstellen**.
 
@@ -18,7 +19,13 @@ Inhalt von `addon/ha_chat/ha_chat/` ins Add-on-Verzeichnis kopieren (z. B. `ad
 
 **Request (POST):**
 ```json
-{ "message": "Nutzerfrage" }
+{
+  "message": "Nutzerfrage",
+  "session_id": "optional",
+  "system_prompt": "optional (kommt standardmäßig aus Add-on-Settings)",
+  "room_scope": "optional, z. B. C0.09",
+  "mcp_bearer_token": "optional, für room-gekoppeltes MCP"
+}
 ```
 
 **Erwartete Antwort (JSON):**
@@ -57,7 +64,7 @@ Der Add-on-Server leitet den Aufruf an die Home-Assistant-API weiter (Endpoint `
 
 Der Server bietet **Streamable HTTP** (stateless) unter **`/api/mcp`** – **derselbe Port** wie die Web-UI (Ingress oder direkter Host-Port, z. B. `:8765`).
 
-**Authentifizierung:** `Authorization: Bearer <mcp_bearer_token>` (Add-on-Option **mcp_bearer_token** setzen; ohne Token antwortet der Endpoint mit 503). Das ist **unabhängig** vom Home-Assistant-MCP unter `/api/mcp` auf der HA-Instanz.
+**Authentifizierung:** Entweder global über `Authorization: Bearer <mcp_bearer_token>` oder **raumgebunden** über `mcp_token_room_scopes` (Format je Zeile: `<token>|<raum>`, z. B. `abc123|C0.09`). Ohne konfigurierten Token antwortet der Endpoint mit 503. Das ist **unabhängig** vom Home-Assistant-MCP unter `/api/mcp` auf der HA-Instanz.
 
 **Home Assistant:** Es werden weiterhin **HA URL** und **HA Token** aus der Add-on-Konfiguration verwendet (REST `/api/states`, `/api/services/...`).
 
@@ -65,6 +72,7 @@ Der Server bietet **Streamable HTTP** (stateless) unter **`/api/mcp`** – **der
 
 - **mcp_entity_allowlist** – kommagetrennt oder zeilenweise: nur diese `entity_id`-Werte (z. B. `light.wohnzimmer,switch.kueche`).
 - **mcp_domain_allowlist** – z. B. `light,switch` – nur Entities dieser Domains.
+- **mcp_token_room_scopes** – pro Zeile `<token>|<raum>`; damit sind MCP-Ergebnisse/Service-Aufrufe auf den Raum gefiltert (Match über `entity_id`/`friendly_name`).
 - Beide Felder gesetzt: eine Entity muss **beiden** Bedingungen genügen (ID in Liste **und** Domain erlaubt).
 - Leer lassen: alles, was das **HA-Token** darf.
 

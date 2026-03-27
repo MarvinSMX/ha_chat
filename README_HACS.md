@@ -116,6 +116,8 @@ icon: mdi:chat
 - `slug` – Alias für `addon_slug` (Abwärtskompatibilität)
 - `addon_direct_url` / `direct_url` / `addon_port_url` – direkte Basis-URL zum Add-on (Ingress umgehen)
 - `welcome_image_url` – alternatives Bild für den Empty-State (sonst eingebettetes Standardbild)
+- `room_scope` / `mcp_room_scope` / `mcp_room` – optionaler Raum-Tag (z. B. `C0.09`), wird an `/api/chat` weitergereicht
+- `mcp_bearer_token` / `room_mcp_bearer_token` – optionaler MCP-Token, wird an Backend/N8N weitergereicht (für raumgebundene MCP-Rechte)
 - `zIndex` – z. B. `100000`
 
 ### Hinweis zu `/hassio/ingress/...`
