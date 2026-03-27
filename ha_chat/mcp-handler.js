@@ -221,16 +221,21 @@ function createAreaResolver(ha_url, ha_token, globalAreaAllowlistRaw) {
 }
 
 function createMcpServer(ctx) {
-  const { ha_url, ha_token, entitySet, domainSet, mcp_area_allowlist } = ctx;
+  const { ha_url, ha_token, entitySet, domainSet, mcp_area_allowlist, forced_area_scope } = ctx;
   const server = new McpServer({
     name: 'ha-chat-addon',
     version: '1.0.0',
   });
 
   const areaResolver = createAreaResolver(ha_url, ha_token, mcp_area_allowlist);
+  const getEffectiveArea = (toolArea) => {
+    const forced = String(forced_area_scope || '').trim();
+    if (forced) return forced;
+    return String(toolArea || '').trim();
+  };
   const scopeHint =
-    entitySet || domainSet || (typeof mcp_area_allowlist === 'string' && mcp_area_allowlist.trim())
-      ? 'Nur freigegebene Entities/Domains/Areas (Add-on mcp_*_allowlist).'
+    entitySet || domainSet || (typeof mcp_area_allowlist === 'string' && mcp_area_allowlist.trim()) || getEffectiveArea('')
+      ? 'Nur freigegebene Entities/Domains/Areas (Add-on mcp_*_allowlist / optional URL-scope).'
       : 'Alle Entities, die das konfigurierte HA-Token darf.';
 
   server.registerPrompt(
@@ -270,7 +275,7 @@ function createMcpServer(ctx) {
       const off = offset != null ? offset : 0;
       try {
         const rowsRaw = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
-        const rowsAll = await areaResolver.filterRows(rowsRaw, area);
+        const rowsAll = await areaResolver.filterRows(rowsRaw, getEffectiveArea(area));
         const total = rowsAll.length;
         const rows = limit != null ? rowsAll.slice(off, off + limit) : rowsAll.slice(off);
         return textResult({
@@ -309,7 +314,7 @@ function createMcpServer(ctx) {
       const off = offset != null ? offset : 0;
       try {
         const rowsRaw = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
-        const rowsAll = await areaResolver.filterRows(rowsRaw, area);
+        const rowsAll = await areaResolver.filterRows(rowsRaw, getEffectiveArea(area));
         const filtered = rowsAll.filter((r) => {
           if (d && String(r.domain || '').toLowerCase() !== d) return false;
           if (s && String(r.state || '').toLowerCase() !== s) return false;
@@ -328,7 +333,7 @@ function createMcpServer(ctx) {
           query: q || null,
           domain: d || null,
           state: s || null,
-          area: area ? String(area).trim() : null,
+          area: getEffectiveArea(area) || null,
           entities: rows,
         });
       } catch (e) {
@@ -355,7 +360,7 @@ function createMcpServer(ctx) {
         return textResult({ error: 'Entity nicht freigegeben oder ungültig: ' + id });
       }
       try {
-        const areaOk = await areaResolver.isEntityAllowedForArea(id, area);
+        const areaOk = await areaResolver.isEntityAllowedForArea(id, getEffectiveArea(area));
         if (!areaOk) return textResult({ error: 'Entity liegt außerhalb der erlaubten HA-Area: ' + id });
       } catch (e) {
         return textResult({ error: String(e.message || e) });
@@ -396,7 +401,7 @@ function createMcpServer(ctx) {
       }
       const data = service_data && typeof service_data === 'object' ? service_data : {};
       try {
-        await assertServiceDataAllowed(data, entitySet, domainSet, areaResolver, area);
+        await assertServiceDataAllowed(data, entitySet, domainSet, areaResolver, getEffectiveArea(area));
       } catch (e) {
         return textResult({ error: e.message || String(e) });
       }
@@ -450,6 +455,13 @@ async function handleMcpHttp(req, res, opts, parsedBody) {
     return;
   }
 
+  let forcedAreaScope = '';
+  try {
+    const u = new URL(req.url || '', 'http://mcp.local');
+    forcedAreaScope =
+      (u.searchParams.get('scope') || u.searchParams.get('area') || u.searchParams.get('area_scope') || '').trim();
+  } catch (_) {}
+
   const { entitySet, domainSet } = buildAllowSets(opts.mcp_entity_allowlist, opts.mcp_domain_allowlist);
   const ctx = {
     ha_url: opts.ha_url,
@@ -457,6 +469,7 @@ async function handleMcpHttp(req, res, opts, parsedBody) {
     entitySet,
     domainSet,
     mcp_area_allowlist: opts.mcp_area_allowlist,
+    forced_area_scope: forcedAreaScope,
   };
 
   let body = parsedBody;

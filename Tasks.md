@@ -64,6 +64,7 @@
 - [x] Add-on-Settings: `system_prompt` (mit Default vorbelegt) + Weitergabe an N8N (`system_prompt`, `area_scope`)
 - [x] FAB: `area_scope`/`ha_area`/`area`/`room` konfigurierbar, wird an `/api/chat` und `/api/execute_action` weitergegeben
 - [x] MCP: Native HA-Area-Filter über `mcp_area_allowlist` + optionales `area` in Tools (`list/search/get/call_service`)
+- [x] MCP: fester URL-Scope (`/api/mcp?scope=...`) erzwingt Bereich serverseitig; Tool-`area` kann ihn nicht überschreiben
 
 ## Nachfolgende Schritte
 

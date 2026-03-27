@@ -85,6 +85,12 @@ Der Server bietet **Streamable HTTP** (stateless) unter **`/api/mcp`** – **der
 
 **Client-Beispiel (URL):** `http://<host>:8765/api/mcp` bzw. über Ingress die Add-on-URL + `/api/mcp`. Für Cursor o. Ä. analog zur HA-Doku mit **mcp-proxy** und `--transport=streamablehttp --stateless`, Ziel-URL auf dieses Add-on zeigen und `Authorization: Bearer <mcp_bearer_token>` setzen.
 
+**Sicherer Scope per URL (AI kann ihn nicht überschreiben):**
+
+- Du kannst den Bereich fest in der MCP-URL setzen, z. B. `.../api/mcp?scope=C0.09`.
+- Wenn `scope` gesetzt ist, wird ein ggf. von der AI übergebenes Tool-Argument `area` **ignoriert**.
+- Das reduziert Prompt-Injection-Risiken für Bereichswechsel.
+
 **Abschalten:** **mcp_enabled** auf `false`.
 
 Embedding, Vektorspeicher, LLM – weiterhin in deinem N8N-Workflow.
