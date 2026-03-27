@@ -77,11 +77,12 @@ Der Server bietet **Streamable HTTP** (stateless) unter **`/api/mcp`** – **der
 - Beide Felder gesetzt: eine Entity muss **beiden** Bedingungen genügen (ID in Liste **und** Domain erlaubt).
 - Leer lassen: alles, was das **HA-Token** darf.
 
-**Tools:** `list_entities`, `search_entities`, `get_entity_state`, `call_service` (mit `service_data.entity_id` bei eingeschränktem Zugriff). **Prompt:** `ha_chat_scoped_assistant`.
+**Tools:** `list_entities`, `search_entities`, `get_entity_state`, `call_service` (bei eingeschränktem Zugriff mit `service_data.entity_id` als String oder Array). **Prompt:** `ha_chat_scoped_assistant`.
 
 - `list_entities`: gibt ohne `limit` **alle** erlaubten Entities zurück (`total`, `returned`, `has_more`), optional `area`.
 - `search_entities`: gezielte Suche über `query` (Name/Entity-ID), optional `domain`, `state`, `area`, plus `limit`/`offset`.
 - `get_entity_state` / `call_service`: optionaler `area`-Parameter für zusätzlichen Room-Scope.
+- `call_service`: Ziel-Entities immer in `service_data.entity_id` übergeben (nicht auf Top-Level).
 - Area-/Registry-Auflösung erfolgt über Home-Assistant-WebSocket (`config/entity_registry/list`, `config/area_registry/list`).
 
 **Client-Beispiel (URL):** `http://<host>:8765/api/mcp` bzw. über Ingress die Add-on-URL + `/api/mcp`. Für Cursor o. Ä. analog zur HA-Doku mit **mcp-proxy** und `--transport=streamablehttp --stateless`, Ziel-URL auf dieses Add-on zeigen und `Authorization: Bearer <mcp_bearer_token>` setzen.

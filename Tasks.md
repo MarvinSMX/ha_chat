@@ -76,8 +76,18 @@
 - [x] FAB-spezifischer `system_prompt` eingebaut (YAML), Server-Priorität: FAB-Prompt > Add-on-Default
 - [x] FAB Voice: Auto-Senden nach fertiger Transcription mit Debounce (700ms)
 - [x] FAB Voice: Duplikat-Fix bei Live-Transcription (stabile Basis + spoken-Text statt wiederholtem Anhängen)
+- [x] System-Prompt für FAB Café (RTO) auf striktes MCP-/Tool-Verhalten aktualisiert (`config.yaml`)
+- [x] MCP-Prompt/Tool-Descriptions für `call_service` geschärft: `service_data.entity_id` (String oder Array), kein Top-Level-`entity_id`
+- [x] MCP-Fehlermeldung präzisiert (`service_data.entity_id` erforderlich bei eingeschränktem Zugriff)
+- [x] README-MCP-Doku zu `call_service` auf `service_data.entity_id` (String/Array) ergänzt
+- [x] MCP `search_entities` verbessert: robuste Suche mit Normalisierung, Synonymen und Ranking (z. B. `klimaanlage` findet `Klimagerät`)
+- [x] MCP `search_entities` auf Suchmaschinen-ähnlichen Index umgestellt (BM25-ähnliches Scoring + Fuzzy-Boost)
 
 ## Nachfolgende Schritte
 
 - [ ] Optional: Verbesserte mobile Darstellung der rechten Sidebar (Overlay/Collapse)
 - [ ] Optional: Fehleranzeige im FAB-Popup weiter verfeinern (mehr Kontext bei 401/403/404)
+- [ ] Optional: N8N-Systemprompt im zugehörigen Workflow/Agent spiegeln, damit Add-on-Default und Upstream-Agent identisch sind
+- [ ] Optional: Beispiel-Playbook mit 3-5 validierten `call_service`-Payloads (Licht, Klima, Schalter) ergänzen
+- [ ] Optional: Such-Synonymliste aus Konfiguration speisbar machen (`mcp_search_synonyms`) für standortspezifische Begriffe
+- [ ] Optional: Embedding-Retrieval für `search_entities` ergänzen (vektorbasiert, externe DB oder lokaler Mini-Index)

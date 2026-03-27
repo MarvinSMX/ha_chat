@@ -32,6 +32,150 @@ function normalizeKey(raw) {
   return String(raw || '').trim().toLowerCase();
 }
 
+function normalizeSearchText(raw) {
+  return String(raw || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ß/g, 'ss')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function deUmlautForSearch(raw) {
+  return String(raw || '')
+    .replace(/ä/g, 'ae')
+    .replace(/ö/g, 'oe')
+    .replace(/ü/g, 'ue')
+    .replace(/Ä/g, 'ae')
+    .replace(/Ö/g, 'oe')
+    .replace(/Ü/g, 'ue');
+}
+
+const SEARCH_SYNONYMS = {
+  klima: ['klimaanlage', 'klimageraet', 'klimagerat', 'klimatisierung', 'climate'],
+  klimaanlage: ['klima', 'klimageraet', 'klimagerat', 'climate'],
+  klimageraet: ['klimaanlage', 'klimagerat', 'klima', 'climate'],
+  klimagerat: ['klimaanlage', 'klimageraet', 'klima', 'climate'],
+  climate: ['klima', 'klimaanlage', 'klimageraet', 'klimagerat'],
+  heizung: ['heizkoerper', 'heizkorper', 'waerme', 'warm'],
+  heizkoerper: ['heizung', 'waerme', 'warm'],
+  licht: ['lampe', 'leuchte', 'light'],
+  lampe: ['licht', 'leuchte', 'light'],
+  leuchte: ['licht', 'lampe', 'light'],
+  lueftung: ['luefter', 'ventilator', 'fan'],
+  luefter: ['lueftung', 'ventilator', 'fan'],
+  ventilator: ['luefter', 'lueftung', 'fan'],
+};
+
+function stemSearchToken(token) {
+  let t = String(token || '');
+  if (!t) return '';
+  // Sehr leichtes Stemming für deutsche Suchbegriffe.
+  if (t.length > 6 && t.endsWith('ungen')) t = t.slice(0, -5);
+  else if (t.length > 5 && t.endsWith('ung')) t = t.slice(0, -3);
+  else if (t.length > 5 && t.endsWith('en')) t = t.slice(0, -2);
+  else if (t.length > 4 && t.endsWith('er')) t = t.slice(0, -2);
+  else if (t.length > 4 && t.endsWith('e')) t = t.slice(0, -1);
+  return t;
+}
+
+function tokenizeForSearch(raw) {
+  const t1 = normalizeSearchText(raw);
+  const t2 = normalizeSearchText(deUmlautForSearch(raw));
+  const base = (t1 + ' ' + t2).trim();
+  if (!base) return [];
+  return Array.from(
+    new Set(
+      base
+        .split(/\s+/)
+        .map(stemSearchToken)
+        .filter((t) => t && t.length >= 2)
+    )
+  );
+}
+
+function buildWeightedQueryTerms(rawQuery) {
+  const out = new Map();
+  const baseTerms = tokenizeForSearch(rawQuery);
+  for (const t of baseTerms) {
+    out.set(t, Math.max(out.get(t) || 0, 1.0));
+    const syn = SEARCH_SYNONYMS[t];
+    if (Array.isArray(syn)) {
+      for (const s of syn) {
+        const st = tokenizeForSearch(s);
+        for (const x of st) out.set(x, Math.max(out.get(x) || 0, 0.75));
+      }
+    }
+  }
+  return out;
+}
+
+function incMap(map, key, by) {
+  map.set(key, (map.get(key) || 0) + by);
+}
+
+function buildEntitySearchIndex(rows) {
+  const docs = [];
+  const df = new Map();
+  let totalDocLength = 0;
+  for (const r of rows) {
+    const idTokens = tokenizeForSearch(r.entity_id);
+    const fnTokens = tokenizeForSearch(r.friendly_name);
+    const tf = new Map();
+    for (const t of idTokens) incMap(tf, t, 1.0);
+    for (const t of fnTokens) incMap(tf, t, 2.0);
+    const docLength = Array.from(tf.values()).reduce((a, b) => a + b, 0) || 1;
+    totalDocLength += docLength;
+    const seen = new Set(tf.keys());
+    for (const term of seen) incMap(df, term, 1);
+    docs.push({
+      row: r,
+      tf,
+      docLength,
+      idText: normalizeSearchText(r.entity_id),
+      fnText: normalizeSearchText(r.friendly_name),
+    });
+  }
+  const N = docs.length || 1;
+  const avgDocLength = totalDocLength > 0 ? totalDocLength / N : 1;
+  return { docs, df, N, avgDocLength };
+}
+
+function scoreDocBm25(index, doc, queryTerms) {
+  if (!queryTerms || queryTerms.size === 0) return 0;
+  const k1 = 1.2;
+  const b = 0.75;
+  let score = 0;
+  for (const [term, qWeight] of queryTerms.entries()) {
+    const tf = doc.tf.get(term) || 0;
+    if (!tf) continue;
+    const df = index.df.get(term) || 0;
+    const idf = Math.log(1 + (index.N - df + 0.5) / (df + 0.5));
+    const norm = tf + k1 * (1 - b + b * (doc.docLength / index.avgDocLength));
+    score += qWeight * idf * ((tf * (k1 + 1)) / norm);
+  }
+  return score;
+}
+
+function fuzzyDocBoost(doc, queryTerms) {
+  if (!queryTerms || queryTerms.size === 0) return 0;
+  let boost = 0;
+  const idText = doc.idText || '';
+  const fnText = doc.fnText || '';
+  for (const [term, w] of queryTerms.entries()) {
+    if (!term || term.length < 3) continue;
+    if (fnText.includes(term)) boost += 0.45 * w;
+    else if (idText.includes(term)) boost += 0.3 * w;
+    else {
+      const short = term.slice(0, Math.max(3, term.length - 1));
+      if (fnText.includes(short)) boost += 0.2 * w;
+      else if (idText.includes(short)) boost += 0.12 * w;
+    }
+  }
+  return boost;
+}
+
 function isEntityAllowed(entityId, entitySet, domainSet) {
   const lid = String(entityId || '').toLowerCase();
   if (!lid || !/^[a-z0-9_]+\.[a-z0-9_.-]+$/i.test(lid)) return false;
@@ -49,6 +193,7 @@ function collectEntityIdsFromServiceData(data) {
   };
   add(data.entity_id);
   if (Array.isArray(data.entity_id)) data.entity_id.forEach(add);
+  // Backward-Compatibility: ältere Clients senden ggf. entity_ids.
   if (Array.isArray(data.entity_ids)) data.entity_ids.forEach(add);
   return out;
 }
@@ -60,7 +205,7 @@ async function assertServiceDataAllowed(serviceData, entitySet, domainSet, areaR
   const ids = collectEntityIdsFromServiceData(serviceData);
   if (ids.length === 0) {
     throw new Error(
-      'Zugriff eingeschränkt: service_data muss entity_id (oder entity_ids) enthalten, damit die Freigabe geprüft werden kann.'
+      'Zugriff eingeschränkt: service_data muss entity_id enthalten (String oder Array), damit die Freigabe geprüft werden kann.'
     );
   }
   for (const id of ids) {
@@ -347,9 +492,15 @@ function createMcpServer(ctx) {
           content: {
             type: 'text',
             text:
-              'Du steuerst Home Assistant nur über die Tools list_entities, get_entity_state und call_service. ' +
+              'Du bist der Home-Assistant-FAB-Assistent für das Café-Dashboard der RTO GmbH. ' +
+              'Arbeite strikt tool-gestützt, faktenbasiert und kurz. ' +
+              'Du steuerst Home Assistant nur über die Tools list_entities, search_entities, get_entity_state und call_service. ' +
               scopeHint +
-              ' Nutze call_service mit domain, service und service_data (u. a. entity_id).',
+              ' Ermittle den Geltungsbereich über verfügbare MCP-Entities, nicht über Annahmen. ' +
+              'Für call_service gilt strikt: Nutze immer domain, service, optional area und service_data. ' +
+              'entity_id darf niemals auf Top-Level stehen, sondern nur in service_data.entity_id (String oder Array). ' +
+              'Wenn kein passendes Gerät im MCP-Scope verfügbar ist, melde das klar und steuere nichts außerhalb des Scopes. ' +
+              'Bei mehreren Treffern: kurze Rückfrage statt raten. Keine erfundenen Entities.',
           },
         },
       ],
@@ -392,7 +543,7 @@ function createMcpServer(ctx) {
     'search_entities',
     {
       description:
-        'Sucht gezielt in freigegebenen HA-Entities nach Text in entity_id/friendly_name sowie optional nach domain/state.',
+        'Sucht gezielt in freigegebenen HA-Entities mit indexbasiertem Ranking (BM25-ähnlich) über entity_id/friendly_name sowie optional nach domain/state.',
       inputSchema: {
         query: z.string().optional().describe('Freitextsuche (z. B. c0.09, wohnzimmer, decke)'),
         domain: z.string().optional().describe('Optionaler Domain-Filter (z. B. light, switch, lock)'),
@@ -408,17 +559,30 @@ function createMcpServer(ctx) {
       const s = String(state || '').trim().toLowerCase();
       const lim = limit != null ? limit : 50;
       const off = offset != null ? offset : 0;
+      const queryTerms = buildWeightedQueryTerms(q);
       try {
         const rowsRaw = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
         const rowsAll = await areaResolver.filterRows(rowsRaw, getEffectiveArea(area));
-        const filtered = rowsAll.filter((r) => {
-          if (d && String(r.domain || '').toLowerCase() !== d) return false;
-          if (s && String(r.state || '').toLowerCase() !== s) return false;
-          if (!q) return true;
-          const id = String(r.entity_id || '').toLowerCase();
-          const fn = String(r.friendly_name || '').toLowerCase();
-          return id.includes(q) || fn.includes(q);
-        });
+        const index = buildEntitySearchIndex(rowsAll);
+        const filtered = rowsAll
+          .map((r, idx) => {
+            const doc = index.docs[idx];
+            const bm25 = q ? scoreDocBm25(index, doc, queryTerms) : 1;
+            const fuzzy = q ? fuzzyDocBoost(doc, queryTerms) : 0;
+            return { row: r, score: bm25 + fuzzy };
+          })
+          .filter((x) => {
+            const r = x.row;
+            if (d && String(r.domain || '').toLowerCase() !== d) return false;
+            if (s && String(r.state || '').toLowerCase() !== s) return false;
+            if (!q) return true;
+            return x.score > 0;
+          })
+          .sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            return String(a.row.friendly_name || '').localeCompare(String(b.row.friendly_name || ''), 'de');
+          })
+          .map((x) => x.row);
         const rows = filtered.slice(off, off + lim);
         return textResult({
           total: filtered.length,
@@ -478,11 +642,14 @@ function createMcpServer(ctx) {
     'call_service',
     {
       description:
-        'Ruft einen HA-Service auf (POST /api/services/<domain>/<service>). entity_id in service_data muss zur Allowlist passen.',
+        'Ruft einen HA-Service auf (POST /api/services/<domain>/<service>). Verwende Ziel-Entities in service_data.entity_id (String oder Array). Bei eingeschränktem Zugriff muss service_data.entity_id zur Allowlist passen.',
       inputSchema: {
         domain: z.string().describe('z. B. light, switch, cover'),
         service: z.string().describe('z. B. turn_on, turn_off, toggle'),
-        service_data: z.record(z.string(), z.unknown()).optional().describe('JSON-Objekt, oft mit entity_id'),
+        service_data: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe('JSON-Objekt mit Ziel in entity_id (String oder Array), z. B. { "entity_id": ["light.a", "light.b"] }'),
         area: z.string().optional().describe('Optionaler HA-Area-Filter (Name oder area_id)'),
       },
     },
