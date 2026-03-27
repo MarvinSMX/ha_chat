@@ -95,6 +95,42 @@ function textResult(obj) {
   return { content: [{ type: 'text', text: s.slice(0, 200000) }] };
 }
 
+function buildSemanticContextFromAttributes(att) {
+  if (!att || typeof att !== 'object') return '';
+  const out = [];
+  for (const [k, v] of Object.entries(att)) {
+    if (!k || v == null) continue;
+    if (typeof v === 'string') {
+      const s = v.trim();
+      if (s) out.push(k + ':' + s);
+      continue;
+    }
+    if (Array.isArray(v)) {
+      const list = v
+        .map((x) => (typeof x === 'string' ? x.trim() : ''))
+        .filter(Boolean)
+        .slice(0, 50);
+      if (list.length) out.push(k + ':' + list.join(' '));
+      continue;
+    }
+    if (typeof v === 'number' || typeof v === 'boolean') {
+      out.push(k + ':' + String(v));
+    }
+  }
+  return out.join(' | ').slice(0, 5000);
+}
+
+function toPublicEntityRow(r) {
+  return {
+    entity_id: r.entity_id,
+    state: r.state,
+    domain: r.domain,
+    friendly_name: r.friendly_name,
+    area_id: r.area_id != null ? r.area_id : null,
+    area_name: r.area_name != null ? r.area_name : null,
+  };
+}
+
 async function fetchAllowedStates(ha_url, ha_token, entitySet, domainSet) {
   if (!ha_url || !ha_token) throw new Error('ha_url / ha_token im Add-on konfigurieren');
   const r = await fetch(ha_url + '/api/states', {
@@ -113,6 +149,7 @@ async function fetchAllowedStates(ha_url, ha_token, entitySet, domainSet) {
       state: s.state,
       domain: String(id).split('.')[0],
       friendly_name: att.friendly_name || id,
+      semantic_context: buildSemanticContextFromAttributes(att),
     });
   }
   return rowsAll;
@@ -385,6 +422,7 @@ function createMcpServer(ctx) {
               ' Ermittle den Geltungsbereich über verfügbare MCP-Entities, nicht über Annahmen. ' +
               'Für call_service gilt strikt: Nutze immer domain, service, optional area und service_data. ' +
               'entity_id darf niemals auf Top-Level stehen, sondern nur in service_data.entity_id (String oder Array). ' +
+              'Bei Stimmungswörtern wie bunt, warmweiss, kaltweiss, ambiente oder buffet suche zuerst in passenden Domains per search_entities (domain kann String oder Array sein), z. B. scene/script/automation/light, und bevorzuge Szenen/Skripte vor Einzel-Lampensteuerung. ' +
               'Wenn kein passendes Gerät im MCP-Scope verfügbar ist, melde das klar und steuere nichts außerhalb des Scopes. ' +
               'Bei mehreren Treffern: kurze Rückfrage statt raten. Keine erfundenen Entities.',
           },
@@ -410,7 +448,8 @@ function createMcpServer(ctx) {
         const rowsRaw = await fetchAllowedStates(ha_url, ha_token, entitySet, domainSet);
         const rowsAll = await areaResolver.filterRows(rowsRaw, getEffectiveArea(area));
         const total = rowsAll.length;
-        const rows = limit != null ? rowsAll.slice(off, off + limit) : rowsAll.slice(off);
+        const pageRows = limit != null ? rowsAll.slice(off, off + limit) : rowsAll.slice(off);
+        const rows = pageRows.map(toPublicEntityRow);
         return textResult({
           total,
           returned: rows.length,
@@ -451,6 +490,9 @@ function createMcpServer(ctx) {
           offset,
           top_k,
         });
+        if (Array.isArray(result.entities)) {
+          result.entities = result.entities.map(toPublicEntityRow);
+        }
         return textResult(result);
       } catch (e) {
         return textResult({ error: String(e.message || e) });

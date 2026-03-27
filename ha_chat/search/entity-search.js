@@ -36,6 +36,7 @@ function buildEmbeddingTextForEntity(row) {
     String(row.domain || ''),
     String(row.area_name || ''),
     String(row.area_id || ''),
+    String(row.semantic_context || ''),
   ]
     .join(' | ')
     .trim();

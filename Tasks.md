@@ -101,6 +101,7 @@
 - [x] `search_entities` erweitert: `domains[]` + `intent`-Mapping (z. B. `licht` => `light/scene/script/automation/switch`) bei FAISS-Retrieval
 - [x] Hardcoded Intent-Mapping wieder entfernt; `search_entities` nutzt nur `domain`/`domains[]` (AI entscheidet Domain-Auswahl)
 - [x] `search_entities` vereinheitlicht: nur `domain` (String oder `domain[]`), separates `domains`-Feld entfernt
+- [x] Szenenerkennung verbessert: Embedding-Kontext aus HA-Attributen (`semantic_context`) ergänzt; API-Responses bleiben auf öffentliche Entity-Felder beschränkt
 
 ## Nachfolgende Schritte
 
