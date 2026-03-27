@@ -10,6 +10,7 @@ const { execFile } = require('child_process');
 const EMBEDDING_CACHE_TTL_MS = 10 * 60 * 1000;
 const EMBEDDING_BATCH_SIZE = 64;
 const execFileAsync = promisify(execFile);
+const PYTHON_BIN = process.env.PYTHON_BIN || '/opt/pyenv/bin/python';
 
 function buildRowsSignature(rows) {
   const h = crypto.createHash('sha1');
@@ -81,7 +82,7 @@ async function writeJsonTempFile(prefix, payload) {
 }
 
 async function runFaissBuild(indexScriptPath, input, indexFile, metaFile) {
-  await execFileAsync('python3', [
+  await execFileAsync(PYTHON_BIN, [
     indexScriptPath,
     'build',
     '--input-json',
@@ -94,7 +95,7 @@ async function runFaissBuild(indexScriptPath, input, indexFile, metaFile) {
 }
 
 async function runFaissSearch(indexScriptPath, queryJson, indexFile, metaFile, topK) {
-  const { stdout } = await execFileAsync('python3', [
+  const { stdout } = await execFileAsync(PYTHON_BIN, [
     indexScriptPath,
     'search',
     '--query-json',

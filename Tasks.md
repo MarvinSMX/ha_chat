@@ -97,6 +97,7 @@
 - [x] `mcp-handler.js` auf Search-Service-Nutzung refactored
 - [x] Dockerfile ergänzt: `search/`-Verzeichnis wird in den Container kopiert
 - [x] Search-Bereinigung auf Classic-RAG: Synonym-/Tokenize-Query-Expansion aus `search/entity-search.js` entfernt (nur Raw-Query-Embedding + FAISS)
+- [x] Docker-PEP668-Fix: Python-venv (`/opt/pyenv`) für `faiss-cpu`/`numpy` genutzt, Worker nutzt `PYTHON_BIN` (Default `/opt/pyenv/bin/python`)
 
 ## Nachfolgende Schritte
 
