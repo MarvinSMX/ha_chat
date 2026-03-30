@@ -1,6 +1,6 @@
 /**
- * HA Chat – Frontend, Inference über N8N-Webhook.
- * Embedding/Sync in N8N. Entity-Steuerung über HA-Proxy.
+ * HA Chat – Frontend, Inference über externen Backend-Service.
+ * Entity-Steuerung über HA-Proxy.
  */
 (function () {
 
@@ -104,16 +104,6 @@
       .img-wrapper.loaded img.chat-img { opacity: 1; }
       .img-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.82); z-index: 200; display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
       .img-lightbox img { max-width: 92vw; max-height: 88vh; border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,.7); }
-      .graph-status { display: flex; align-items: center; gap: 6px; font-size: 0.8em; color: #aaa; white-space: nowrap; }
-      .graph-status a { color: #009AC7; text-decoration: none; font-weight: 600; }
-      .graph-status a:hover { text-decoration: underline; }
-      .graph-login-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-      .graph-login-dot.ok  { background: #4caf50; }
-      .graph-login-dot.err { background: #ff8a80; }
-      .graph-login-dot.spin { background: #f0b429; animation: spin-dot 1s linear infinite; }
-      @keyframes spin-dot { 0%{opacity:1}50%{opacity:.3}100%{opacity:1} }
-      .graph-user-code { font-family: monospace; font-size: 1.05em; letter-spacing: 2px; color: #fff; background: #0d1f26; padding: 1px 7px; border-radius: 5px; user-select: all; cursor: copy; }
-      .graph-login-btn { background: #009AC7; color: #fff; border: none; border-radius: 8px; padding: 2px 10px; font-size: 0.85em; cursor: pointer; font-family: inherit; }
       .sync-btn { display: flex; align-items: center; gap: 5px; background: #2d2d2d; border: 1px solid #3a3a3a; color: #aaa; border-radius: 8px; padding: 4px 11px; font-size: 0.8em; font-family: inherit; cursor: pointer; transition: border-color .15s, color .15s; white-space: nowrap; }
       .sync-btn:hover:not(:disabled) { border-color: #009AC7; color: #009AC7; }
       .sync-btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -163,7 +153,6 @@
       <div class="main">
         <div class="top-bar">
           <div class="top-bar-left">
-            <div id="graph-status" style="display:none" class="graph-status"></div>
             <button id="sync-btn" class="sync-btn" style="display:none" title="Doku-Sync starten">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
@@ -233,7 +222,7 @@
       else if (m[3] !== undefined) out += '<em>' + escapeHtml(m[3]) + '</em>';
       else if (m[4] !== undefined) out += '<code>' + escapeHtml(m[4]) + '</code>';
       else if (m[5] !== undefined) {
-        var proxySrc = apiBase() + '/api/proxy_image?url=' + encodeURIComponent(m[5]);
+        var proxySrc = m[5];
         out += '<span class="img-wrapper">'
           + '<span class="img-skeleton"></span>'
           + '<img class="chat-img" src="' + escapeAttr(proxySrc) + '" alt="Bild" loading="lazy">'
@@ -362,8 +351,6 @@
       /* Sync-Button (nur Sidebar) */
       if (syncBtn) syncBtn.addEventListener('click', function () { self._triggerSync(); });
 
-      /* MS Graph Login-Status prüfen */
-      this._checkGraphStatus();
       this._loadMe();
 
       /* Senden */
@@ -424,10 +411,6 @@
       var expandBtn = this.shadowRoot.getElementById('sidebar-expand-btn');
       if (expandBtn) expandBtn.style.display = this._sidebarExpanded ? 'none' : 'inline-flex';
 
-      var graph = this.shadowRoot.getElementById('graph-status-sidebar');
-      if (graph) graph.style.display = this._sidebarExpanded ? '' : 'none';
-      var sync = this.shadowRoot.getElementById('sync-btn-sidebar');
-      if (sync) sync.style.display = this._sidebarExpanded ? 'flex' : 'none';
     }
 
     _shortDate(ts) {
@@ -739,75 +722,6 @@
       if (scrollBottom) threadEl.scrollTop = threadEl.scrollHeight;
     }
 
-    /* ── MS Graph Status (Header, Device Code Flow) ─────────────────── */
-    _checkGraphStatus() {
-      var self = this;
-      var bar = this.shadowRoot.getElementById('graph-status');
-      if (!bar) return;
-      fetch(apiBase() + '/api/graph_status')
-        .then(function (r) { return r.json().catch(function () { return {}; }); })
-        .then(function (s) {
-          if (!s.configured) {
-            bar.style.display = 'none';
-            return;
-          }
-          bar.style.display = 'flex';
-          if (s.authenticated) {
-            bar.innerHTML = '<span class="graph-login-dot ok"></span>Graph';
-          } else {
-            bar.innerHTML = '<span class="graph-login-dot err"></span>'
-              + '<button class="graph-login-btn">Graph anmelden</button>';
-            var b = bar.querySelector('.graph-login-btn');
-            if (b) b.addEventListener('click', function () { self._startDeviceLogin(); });
-          }
-        })
-        .catch(function () {
-          bar.style.display = 'none';
-        });
-    }
-
-    _startDeviceLogin() {
-      var self = this;
-      var bar = this.shadowRoot.getElementById('graph-status');
-      bar.innerHTML = '<span class="graph-login-dot spin"></span>Warte…';
-
-      fetch(apiBase() + '/api/graph_device_start', { method: 'POST' })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d.error) {
-            bar.innerHTML = '<span class="graph-login-dot err"></span>Fehler: ' + d.error;
-            return;
-          }
-          bar.innerHTML =
-            '<span class="graph-login-dot spin"></span>'
-            + '<a href="' + d.verification_uri + '" target="_blank">' + d.verification_uri + '</a>'
-            + '&nbsp;Code:&nbsp;<span class="graph-user-code" title="Klicken zum Kopieren">' + d.user_code + '</span>';
-
-          var codeEl = bar.querySelector('.graph-user-code');
-          if (codeEl) codeEl.addEventListener('click', function () {
-            navigator.clipboard && navigator.clipboard.writeText(d.user_code).catch(function(){});
-          });
-
-          var deadline = Date.now() + (d.expires_in || 900) * 1000;
-          var interval = (d.interval || 5) * 1000;
-          var poll = setInterval(function () {
-            if (Date.now() > deadline) { clearInterval(poll); self._checkGraphStatus(); return; }
-            fetch(apiBase() + '/api/graph_device_poll', { method: 'POST' })
-              .then(function (r) { return r.json(); })
-              .then(function (p) {
-                if (p.status === 'ok' || p.status === 'error' || p.status === 'expired') {
-                  clearInterval(poll);
-                  self._checkGraphStatus();
-                }
-              })
-              .catch(function () {});
-          }, interval);
-        })
-        .catch(function () {
-          bar.innerHTML = '<span class="graph-login-dot err"></span>Fehler';
-        });
-    }
-
     /* ── Manueller Doku-Sync ─────────────────────────────────────────── */
     _triggerSync() {
       var btn = this.shadowRoot.getElementById('sync-btn');
@@ -876,7 +790,7 @@
           self._setLastAssistantMessage(
             e.name === 'AbortError'
               ? 'Zeitüberschreitung – bitte erneut versuchen.'
-              : 'Verbindung fehlgeschlagen. N8N-Webhook in den Add-on-Optionen prüfen.'
+              : 'Verbindung fehlgeschlagen. Backend-Webhook in den Add-on-Optionen prüfen.'
           );
         })
         .finally(function () { sendBtn.disabled = false; });
@@ -909,7 +823,7 @@
         })
         .catch(function (e) {
           self._showError('Fehler: ' + (e.message || e));
-          self._setLastAssistantMessage('Aktion fehlgeschlagen. N8N-Webhook prüfen.');
+          self._setLastAssistantMessage('Aktion fehlgeschlagen. Backend-Webhook prüfen.');
         })
         .finally(function () { sendBtn.disabled = false; });
     }

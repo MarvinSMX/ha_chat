@@ -318,5 +318,5 @@ function createEntitySearchService(config) {
   return { search, rebuild, health, embeddingConfigured };
 }
 
-module.exports = { createEntitySearchService };
+module.exports = { createEntitySearchService, fetchAzureOpenAiEmbeddings };
 

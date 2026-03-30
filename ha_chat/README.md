@@ -1,21 +1,21 @@
-# HA Chat (N8N)
+# HA Chat (Backend Service)
 
-Add-on: **nur Frontend** + minimaler Proxy zum N8N Inference-Webhook. Embedding, RAG, OneNote-Sync etc. liegen vollständig in N8N.
+Add-on: **Frontend + MCP** mit Proxy zu einem externen Backend-Service (Inference/Sync).
 
 ## Installation
 
-Inhalt von `addon/ha_chat/ha_chat/` ins Add-on-Verzeichnis kopieren (z. B. `addons/ha_chat/`). In Home Assistant: **Einstellungen** → **Add-ons** → **HA Chat (N8N)** installieren und starten.
+Inhalt von `addon/ha_chat/ha_chat/` ins Add-on-Verzeichnis kopieren (z. B. `addons/ha_chat/`). In Home Assistant: **Einstellungen** → **Add-ons** → **HA Chat** installieren und starten.
 
 **Chat-UI:** Über Ingress oder `http://<dein-ha>:8765`.
 
 ## Konfiguration
 
-- **N8N Inference-Webhook-URL** – Endpoint für Chat-Anfragen.
+- **Backend Inference-Webhook-URL** – Endpoint für Chat-Anfragen.
 - **HA URL** (optional) – z. B. `http://homeassistant.local:8123`. Nur nötig für Entity-Steuerung (Buttons im Chat).
 - **HA Token** (optional) – Long-Lived Access Token von Home Assistant. Unter **Profil** → **Sicherheit** → **Token erstellen**.
-- **System Prompt** – globaler Standardprompt für N8N (im Add-on vorbelegt mit dem aktuellen Default; kann in den Add-on-Settings überschrieben werden).
+- **System Prompt** – globaler Standardprompt für den Backend-Agenten (im Add-on vorbelegt; kann in den Add-on-Settings überschrieben werden).
 
-## N8N Inference-Webhook
+## Backend Inference-Webhook
 
 **Request (POST):**
 ```json
@@ -26,8 +26,8 @@ Inhalt von `addon/ha_chat/ha_chat/` ins Add-on-Verzeichnis kopieren (z. B. `ad
 }
 ```
 
-- `system_prompt` wird vom Add-on aus den Settings gesetzt (Default vorbelegt) und an N8N weitergegeben.
-- `area_scope` kommt optional z. B. aus der FAB-Konfiguration (`area_scope`) und kann von N8N für MCP-Raumsuche genutzt werden.
+- `system_prompt` wird vom Add-on aus den Settings gesetzt (Default vorbelegt) und an den Backend-Service weitergegeben.
+- `area_scope` kommt optional z. B. aus der FAB-Konfiguration (`area_scope`) und kann vom Backend-Service für MCP-Raumsuche genutzt werden.
 
 **Erwartete Antwort (JSON):**
 ```json
@@ -52,7 +52,7 @@ Inhalt von `addon/ha_chat/ha_chat/` ins Add-on-Verzeichnis kopieren (z. B. `ad
 
 ### Entity-Buttons im Text (In-Text-Steuerung)
 
-Im Feld **answer** kann N8N folgende Syntax ausgeben; sie wird als klickbarer Badge-Button gerendert:
+Im Feld **answer** kann der Backend-Service folgende Syntax ausgeben; sie wird als klickbarer Badge-Button gerendert:
 
 - **Format:** `[entity:<entity_id>:<action>:<label>]` – **action** wird ignoriert, beim Klick wird immer **toggle** aufgerufen.
 - **Beispiel:** `[entity:light.buero:turn_on:Büro]` → Ein Button „Büro“; Klick schaltet die Entity um (an ↔ aus).
@@ -108,4 +108,4 @@ Der Server bietet **Streamable HTTP** (stateless) unter **`/api/mcp`** – **der
 
 **Abschalten:** **mcp_enabled** auf `false`.
 
-Embedding, Vektorspeicher, LLM – weiterhin in deinem N8N-Workflow.
+Embedding, Vektorspeicher, LLM – weiterhin im externen Backend-Service.

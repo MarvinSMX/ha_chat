@@ -15,14 +15,13 @@ ports:
   8099/tcp: 8765
 ingress: true
 options:
-  n8n_inference_webhook_url: ""
-  n8n_sync_webhook_url: ""
+  backend_inference_webhook_url: ""
+  backend_enabled: true
+  backend_sync_webhook_url: ""
+  agent_backend: "backend"
   ha_url: ""
   ha_token: ""
   system_prompt: "Du bist ein hilfreicher Home-Assistant-Assistent. Antworte knapp und präzise auf Deutsch. Nutze verfügbare Tools nur wenn nötig und beachte Bereichs-/Raumbeschränkungen."
-  graph_tenant_id: ""
-  graph_client_id: ""
-  graph_client_secret: ""
   mcp_enabled: true
   mcp_bearer_token: ""
   mcp_entity_allowlist: ""
@@ -41,14 +40,13 @@ options:
     - "Zeig mir den Status der Heizung"
     - "Welche Geräte sind aktiv?"
 schema:
-  n8n_inference_webhook_url: str
-  n8n_sync_webhook_url: str
+  backend_inference_webhook_url: str
+  backend_enabled: bool
+  backend_sync_webhook_url: str
+  agent_backend: str
   ha_url: str
   ha_token: str
   system_prompt: str
-  graph_tenant_id: str
-  graph_client_id: str
-  graph_client_secret: str
   mcp_enabled: bool
   mcp_bearer_token: password
   mcp_entity_allowlist: str

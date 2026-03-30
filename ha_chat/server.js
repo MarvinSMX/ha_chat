@@ -1,15 +1,14 @@
 /**
- * Minimaler Server für HA Chat Add-on: statische Dateien (www/) + Proxy zu N8N Inference-Webhook.
- * Kein Backend (OneNote, Embedding etc.) – alles in N8N.
+ * Minimaler Server für HA Chat Add-on: statische Dateien (www/) + Proxy zu externem Backend-Service.
+ * Optional weiterhin AI-SDK lokal im Add-on.
  */
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
-const crypto = require('crypto');
 const { handleMcpHttp } = require('./mcp-handler.js');
 
-// HTTPS-Aufrufe zu N8N: Zertifikatsprüfung überspringen (z. B. selbstsigniert / lokales N8N)
+// HTTPS-Aufrufe zu externen Webhooks: Zertifikatsprüfung überspringen (z. B. selbstsigniert)
 if (process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '1') {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   console.log('[HA Chat] NODE_TLS_REJECT_UNAUTHORIZED=0 (SSL-Verifikation für Webhook deaktiviert)');
@@ -19,12 +18,7 @@ const DATA_DIR   = process.env.DATA_DIR || '/data';
 const OPTIONS_PATH = path.join(DATA_DIR, 'options.json');
 const WWW_DIR    = path.join(__dirname, 'www');
 const PORT       = parseInt(process.env.SUPERVISOR_INGRESS_PORT || process.env.PORT || '8099', 10);
-const IMG_CACHE_DIR = path.join(DATA_DIR, 'img_cache');
 const CHATS_PATH = path.join(DATA_DIR, 'chats.json');
-const IMG_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 Tage
-
-/* Cache-Verzeichnis anlegen */
-try { fs.mkdirSync(IMG_CACHE_DIR, { recursive: true }); } catch (_) {}
 
 const DEFAULT_SUGGESTIONS = [
   'Was kann ich dich fragen?',
@@ -45,13 +39,12 @@ function getOptions() {
       : DEFAULT_SUGGESTIONS;
     const systemPrompt = (typeof opts.system_prompt === 'string' ? opts.system_prompt.trim() : '') || DEFAULT_SYSTEM_PROMPT;
     return {
-      n8n_inference_webhook_url: (opts.n8n_inference_webhook_url || '').trim().replace(/\/$/, ''),
-      n8n_sync_webhook_url:      (opts.n8n_sync_webhook_url      || '').trim().replace(/\/$/, ''),
+      backend_inference_webhook_url: (opts.backend_inference_webhook_url || '').trim().replace(/\/$/, ''),
+      backend_enabled:               opts.backend_enabled !== false,
+      backend_sync_webhook_url:      (opts.backend_sync_webhook_url || '').trim().replace(/\/$/, ''),
+      agent_backend:             (opts.agent_backend || 'backend').trim().toLowerCase(),
       ha_url:                    (opts.ha_url                    || '').trim().replace(/\/$/, ''),
       ha_token:                  (opts.ha_token                  || '').trim(),
-      graph_tenant_id:           (opts.graph_tenant_id           || '').trim(),
-      graph_client_id:           (opts.graph_client_id           || '').trim(),
-      graph_client_secret:       (opts.graph_client_secret       || '').trim(),
       prompt_suggestions: suggestions,
       system_prompt:             systemPrompt,
       mcp_enabled:               opts.mcp_enabled !== false,
@@ -73,13 +66,12 @@ function getOptions() {
     if (e.code !== 'ENOENT') console.log('[HA Chat] options.json:', e.message);
   }
   return {
-    n8n_inference_webhook_url: (process.env.N8N_INFERENCE_WEBHOOK_URL || '').trim().replace(/\/$/, ''),
-    n8n_sync_webhook_url:      (process.env.N8N_SYNC_WEBHOOK_URL      || '').trim().replace(/\/$/, ''),
+    backend_inference_webhook_url: (process.env.BACKEND_INFERENCE_WEBHOOK_URL || '').trim().replace(/\/$/, ''),
+    backend_enabled:               process.env.BACKEND_ENABLED !== '0' && process.env.BACKEND_ENABLED !== 'false',
+    backend_sync_webhook_url:      (process.env.BACKEND_SYNC_WEBHOOK_URL || '').trim().replace(/\/$/, ''),
+    agent_backend:             (process.env.AGENT_BACKEND || 'backend').trim().toLowerCase(),
     ha_url:                    (process.env.HA_URL                    || '').trim().replace(/\/$/, ''),
     ha_token:                  (process.env.HA_TOKEN                  || '').trim(),
-    graph_tenant_id:           (process.env.GRAPH_TENANT_ID           || '').trim(),
-    graph_client_id:           (process.env.GRAPH_CLIENT_ID           || '').trim(),
-    graph_client_secret:       (process.env.GRAPH_CLIENT_SECRET       || '').trim(),
     prompt_suggestions: DEFAULT_SUGGESTIONS,
     system_prompt:             (process.env.SYSTEM_PROMPT             || '').trim() || DEFAULT_SYSTEM_PROMPT,
     mcp_enabled:               process.env.MCP_ENABLED !== '0' && process.env.MCP_ENABLED !== 'false',
@@ -98,134 +90,8 @@ function getOptions() {
   };
 }
 
-/* ── MS Graph (Delegated – Device Code Flow) ─────────────────────────
- * Kein Redirect-URI nötig → kein HA-Ingress-Cookie-Problem.
- * Admin öffnet einmalig https://microsoft.com/devicelogin, gibt User-Code ein.
- * Refresh-Token wird serverseitig gespeichert und für alle User genutzt.
- * ─────────────────────────────────────────────────────────────────── */
-const GRAPH_TOKENS_PATH = path.join(DATA_DIR, 'graph_tokens.json');
-const GRAPH_SCOPE = 'https://graph.microsoft.com/Notes.Read.All offline_access';
-
-/* Aktiver Device-Code-Flow (in-memory, wird beim Polling genutzt) */
-let _deviceFlow = null; // { device_code, expires_at, interval, poll_timer }
-
-function loadGraphTokens() {
-  try { return JSON.parse(fs.readFileSync(GRAPH_TOKENS_PATH, 'utf-8')); } catch (_) { return null; }
-}
-function saveGraphTokens(t) {
-  fs.writeFileSync(GRAPH_TOKENS_PATH, JSON.stringify(t), 'utf-8');
-}
-
-async function getGraphToken() {
-  const opts = getOptions();
-  if (!opts.graph_tenant_id || !opts.graph_client_id) return null;
-
-  let tokens = loadGraphTokens();
-  if (!tokens) return null;
-
-  /* Access-Token noch gültig? */
-  if (tokens.access_token && tokens.expires_at && Date.now() < tokens.expires_at - 60000) {
-    return tokens.access_token;
-  }
-
-  /* Refresh */
-  if (!tokens.refresh_token) { console.log('[HA Chat] Graph: kein Refresh-Token – bitte erneut einloggen'); return null; }
-  const tokenUrl = 'https://login.microsoftonline.com/' + opts.graph_tenant_id + '/oauth2/v2.0/token';
-  const body = new URLSearchParams({
-    grant_type:    'refresh_token',
-    client_id:     opts.graph_client_id,
-    client_secret: opts.graph_client_secret || '',
-    refresh_token: tokens.refresh_token,
-    scope:         GRAPH_SCOPE,
-  });
-  const r = await fetch(tokenUrl, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body:    body.toString(),
-  });
-  const data = await r.json().catch(() => ({}));
-  if (!data.access_token) {
-    console.log('[HA Chat] Graph Refresh fehlgeschlagen:', JSON.stringify(data));
-    return null;
-  }
-  tokens = {
-    access_token:  data.access_token,
-    refresh_token: data.refresh_token || tokens.refresh_token,
-    expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
-  };
-  saveGraphTokens(tokens);
-  console.log('[HA Chat] Graph Access-Token per Refresh erneuert');
-  return tokens.access_token;
-}
-
-/* Device Code Flow starten – gibt { user_code, verification_uri, expires_in, interval } zurück */
-async function startDeviceCodeFlow() {
-  const opts = getOptions();
-  if (!opts.graph_tenant_id || !opts.graph_client_id) return { error: 'graph_tenant_id / graph_client_id fehlen' };
-
-  const r = await fetch(
-    'https://login.microsoftonline.com/' + opts.graph_tenant_id + '/oauth2/v2.0/devicecode',
-    {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body:    new URLSearchParams({ client_id: opts.graph_client_id, scope: GRAPH_SCOPE }).toString(),
-    }
-  );
-  const data = await r.json().catch(() => ({}));
-  if (!data.device_code) return { error: data.error_description || data.error || 'Unbekannter Fehler' };
-
-  _deviceFlow = {
-    device_code: data.device_code,
-    expires_at:  Date.now() + (data.expires_in || 900) * 1000,
-    interval:    (data.interval || 5) * 1000,
-  };
-  console.log('[HA Chat] Device Code Flow gestartet, user_code=' + data.user_code);
-  return {
-    user_code:        data.user_code,
-    verification_uri: data.verification_uri || 'https://microsoft.com/devicelogin',
-    expires_in:       data.expires_in || 900,
-    interval:         data.interval || 5,
-  };
-}
-
-/* Server-seitiger Poll – wird vom Frontend-API-Endpunkt aufgerufen */
-async function pollDeviceCodeFlow() {
-  const opts = getOptions();
-  if (!_deviceFlow) return { status: 'no_flow' };
-  if (Date.now() > _deviceFlow.expires_at) { _deviceFlow = null; return { status: 'expired' }; }
-
-  const tokenUrl = 'https://login.microsoftonline.com/' + opts.graph_tenant_id + '/oauth2/v2.0/token';
-  const body = new URLSearchParams({
-    grant_type:  'urn:ietf:params:oauth:grant-type:device_code',
-    client_id:   opts.graph_client_id,
-    device_code: _deviceFlow.device_code,
-  });
-  const r = await fetch(tokenUrl, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body:    body.toString(),
-  });
-  const data = await r.json().catch(() => ({}));
-
-  if (data.access_token) {
-    saveGraphTokens({
-      access_token:  data.access_token,
-      refresh_token: data.refresh_token,
-      expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
-    });
-    _deviceFlow = null;
-    console.log('[HA Chat] Device Code Login erfolgreich, Tokens gespeichert');
-    return { status: 'ok' };
-  }
-  if (data.error === 'authorization_pending') return { status: 'pending' };
-  if (data.error === 'slow_down') return { status: 'pending' };
-  console.log('[HA Chat] Device Code Poll Fehler:', JSON.stringify(data));
-  _deviceFlow = null;
-  return { status: 'error', detail: data.error_description || data.error };
-}
-
 function getInferenceUrl() {
-  return getOptions().n8n_inference_webhook_url;
+  return getOptions().backend_inference_webhook_url;
 }
 
 function collectBody(req) {
@@ -321,7 +187,7 @@ function appendMessage(userId, chatId, role, content, extra) {
   return chat;
 }
 
-async function callN8n(webhookUrl, body, logLabel) {
+async function callBackendWebhook(webhookUrl, body, logLabel) {
   const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
   console.log('[HA Chat] ' + logLabel + ' → POST ' + webhookUrl + ' body=' + bodyStr);
   const r = await fetch(webhookUrl, {
@@ -344,6 +210,7 @@ async function callN8n(webhookUrl, body, logLabel) {
   } catch (_) {}
   return { ok: r.ok, status: r.status, text: text || '{}', data };
 }
+
 
 const server = http.createServer(async (req, res) => {
   const parsed = url.parse(req.url || '', true);
@@ -408,8 +275,10 @@ const server = http.createServer(async (req, res) => {
     const opts = getOptions();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
-      n8n_inference_webhook_url: opts.n8n_inference_webhook_url,
-      sync_enabled: !!opts.n8n_sync_webhook_url,
+      backend_enabled: opts.backend_enabled,
+      agent_backend: opts.agent_backend,
+      backend_inference_webhook_url: opts.backend_inference_webhook_url,
+      sync_enabled: !!opts.backend_sync_webhook_url,
       prompt_suggestions: opts.prompt_suggestions,
       system_prompt: opts.system_prompt,
     }));
@@ -510,13 +379,13 @@ const server = http.createServer(async (req, res) => {
   // Manueller Doku-Sync
   if (pathname === '/api/sync' && req.method === 'POST') {
     const opts = getOptions();
-    if (!opts.n8n_sync_webhook_url) {
+    if (!opts.backend_sync_webhook_url) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'n8n_sync_webhook_url nicht konfiguriert' }));
+      res.end(JSON.stringify({ error: 'backend_sync_webhook_url nicht konfiguriert' }));
       return;
     }
-    console.log('[HA Chat] sync → POST ' + opts.n8n_sync_webhook_url);
-    fetch(opts.n8n_sync_webhook_url, {
+    console.log('[HA Chat] sync → POST ' + opts.backend_sync_webhook_url);
+    fetch(opts.backend_sync_webhook_url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ trigger: 'manual', ts: Date.now() }),
@@ -538,13 +407,6 @@ const server = http.createServer(async (req, res) => {
   // Proxy: Chat
   if (pathname === '/api/chat' && req.method === 'POST') {
     const userId = getHaUserId(req);
-    const inferenceUrl = getInferenceUrl();
-    if (!inferenceUrl) {
-      console.log('[HA Chat] chat: Webhook-URL fehlt (options.json oder N8N_INFERENCE_WEBHOOK_URL prüfen)');
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'N8N Inference-Webhook-URL fehlt (Add-on konfigurieren)' }));
-      return;
-    }
     const body = await collectBody(req);
     let data;
     try {
@@ -576,15 +438,22 @@ const server = http.createServer(async (req, res) => {
       system_prompt: reqSystemPrompt || opts.system_prompt || DEFAULT_SYSTEM_PROMPT,
       area_scope: areaScope || undefined,
     };
+    const inferenceUrl = getInferenceUrl();
+    if (!inferenceUrl) {
+      console.log('[HA Chat] chat: Webhook-URL fehlt (options.json oder BACKEND_INFERENCE_WEBHOOK_URL prüfen)');
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Backend Inference-Webhook-URL fehlt (Add-on konfigurieren)' }));
+      return;
+    }
     try {
-      const n8n = await callN8n(inferenceUrl, payload, 'chat');
-      const answer = n8n.data && typeof n8n.data.answer === 'string' ? n8n.data.answer : '';
+      const backend = await callBackendWebhook(inferenceUrl, payload, 'chat');
+      const answer = backend.data && typeof backend.data.answer === 'string' ? backend.data.answer : '';
       appendMessage(userId, chatId, 'assistant', answer, {
-        sources: n8n.data && n8n.data.sources,
-        actions: n8n.data && n8n.data.actions,
+        sources: backend.data && backend.data.sources,
+        actions: backend.data && backend.data.actions,
       });
-      res.writeHead(n8n.ok ? 200 : n8n.status, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(Object.assign({}, n8n.data || {}, { chat_id: chatId })));
+      res.writeHead(backend.ok ? 200 : backend.status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(Object.assign({}, backend.data || {}, { chat_id: chatId })));
     } catch (e) {
       console.log('[HA Chat] chat Exception: ' + (e.message || String(e)));
       res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -693,13 +562,6 @@ const server = http.createServer(async (req, res) => {
   // Proxy: Aktion (gleicher Webhook, Nachricht = Utterance)
   if (pathname === '/api/execute_action' && req.method === 'POST') {
     const userId = getHaUserId(req);
-    const inferenceUrl = getInferenceUrl();
-    if (!inferenceUrl) {
-      console.log('[HA Chat] execute_action: Webhook-URL fehlt');
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'N8N Inference-Webhook-URL fehlt (Add-on konfigurieren)' }));
-      return;
-    }
     const body = await collectBody(req);
     let data;
     try {
@@ -726,136 +588,26 @@ const server = http.createServer(async (req, res) => {
       system_prompt: reqSystemPrompt || opts.system_prompt || DEFAULT_SYSTEM_PROMPT,
       area_scope: areaScope || undefined,
     };
+    const inferenceUrl = getInferenceUrl();
+    if (!inferenceUrl) {
+      console.log('[HA Chat] execute_action: Webhook-URL fehlt');
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Backend Inference-Webhook-URL fehlt (Add-on konfigurieren)' }));
+      return;
+    }
     try {
-      const n8n = await callN8n(inferenceUrl, actionPayload, 'action');
-      const answer = n8n.data && (n8n.data.answer != null ? n8n.data.answer : n8n.data.response);
+      const backend = await callBackendWebhook(inferenceUrl, actionPayload, 'action');
+      const answer = backend.data && (backend.data.answer != null ? backend.data.answer : backend.data.response);
       appendMessage(userId, chatId, 'assistant', answer || '', {
-        sources: n8n.data && n8n.data.sources,
-        actions: n8n.data && n8n.data.actions,
+        sources: backend.data && backend.data.sources,
+        actions: backend.data && backend.data.actions,
       });
-      res.writeHead(n8n.ok ? 200 : n8n.status, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(Object.assign({}, n8n.data || {}, { chat_id: chatId })));
+      res.writeHead(backend.ok ? 200 : backend.status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(Object.assign({}, backend.data || {}, { chat_id: chatId })));
     } catch (e) {
       console.log('[HA Chat] action Exception: ' + (e.message || String(e)));
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: e.message || String(e), chat_id: chatId }));
-    }
-    return;
-  }
-
-  // Graph Auth-Status
-  if (pathname === '/api/graph_status' && req.method === 'GET') {
-    const opts    = getOptions();
-    const tokens  = loadGraphTokens();
-    const configured    = !!(opts.graph_tenant_id && opts.graph_client_id);
-    const authenticated = !!(tokens && tokens.refresh_token);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ configured, authenticated, expires_at: tokens ? tokens.expires_at : null }));
-    return;
-  }
-
-  // Device Code Flow starten
-  if (pathname === '/api/graph_device_start' && req.method === 'POST') {
-    try {
-      const result = await startDeviceCodeFlow();
-      res.writeHead(result.error ? 400 : 200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(result));
-    } catch (e) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: e.message }));
-    }
-    return;
-  }
-
-  // Device Code Flow pollen
-  if (pathname === '/api/graph_device_poll' && req.method === 'POST') {
-    try {
-      const result = await pollDeviceCodeFlow();
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(result));
-    } catch (e) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: e.message }));
-    }
-    return;
-  }
-
-  // Proxy: Bild via MS Graph Token abrufen
-  if (pathname === '/api/proxy_image' && req.method === 'GET') {
-    const imageUrl = (parsed.query && parsed.query.url) ? String(parsed.query.url).trim() : '';
-    if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'url fehlt oder ungültig' }));
-      return;
-    }
-
-    /* ── Disk-Cache prüfen ─────────────────────────────────────── */
-    const cacheKey  = crypto.createHash('sha256').update(imageUrl).digest('hex');
-    const cacheFile = path.join(IMG_CACHE_DIR, cacheKey);
-    const metaFile  = cacheFile + '.meta';
-    const sendCached = () => {
-      try {
-        const meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8'));
-        const data = fs.readFileSync(cacheFile);
-        res.writeHead(200, {
-          'Content-Type':  meta.contentType,
-          'Cache-Control': 'private, max-age=604800',
-          'X-Cache':       'HIT',
-        });
-        res.end(data);
-        return true;
-      } catch (_) { return false; }
-    };
-
-    try {
-      const meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8'));
-      if (meta.cachedAt && Date.now() - meta.cachedAt < IMG_CACHE_TTL) {
-        if (sendCached()) { return; }
-      }
-    } catch (_) { /* kein Cache */ }
-
-    /* ── Graph-Fetch ───────────────────────────────────────────── */
-    try {
-      const token = await getGraphToken();
-      if (!token) {
-        /* Token fehlt – trotzdem gecachte Version liefern falls vorhanden */
-        if (sendCached()) return;
-        console.log('[HA Chat] proxy_image: kein Token verfügbar');
-        res.writeHead(503, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Kein Graph-Token – bitte einloggen' }));
-        return;
-      }
-      console.log('[HA Chat] proxy_image → GET (fetch) ' + imageUrl.slice(0, 100));
-      const imgRes = await fetch(imageUrl, { headers: { 'Authorization': 'Bearer ' + token } });
-      if (!imgRes.ok) {
-        const errBody = await imgRes.text().catch(() => '');
-        console.log('[HA Chat] proxy_image ' + imgRes.status + ' Graph-Fehler:', errBody.slice(0, 300));
-        /* Bei 401/403: gecachte Version nutzen falls noch vorhanden */
-        if ((imgRes.status === 401 || imgRes.status === 403) && sendCached()) return;
-        res.writeHead(imgRes.status, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'HTTP ' + imgRes.status, detail: errBody.slice(0, 200) }));
-        return;
-      }
-      const contentType = imgRes.headers.get('content-type') || 'image/png';
-      const buf = Buffer.from(await imgRes.arrayBuffer());
-
-      /* ── Im Cache speichern ──────────────────────────────────── */
-      try {
-        fs.writeFileSync(cacheFile, buf);
-        fs.writeFileSync(metaFile, JSON.stringify({ contentType, cachedAt: Date.now(), url: imageUrl }));
-      } catch (e) { console.log('[HA Chat] proxy_image Cache-Schreib-Fehler:', e.message); }
-
-      res.writeHead(200, {
-        'Content-Type':  contentType,
-        'Cache-Control': 'private, max-age=604800',
-        'X-Cache':       'MISS',
-      });
-      res.end(buf);
-    } catch (e) {
-      console.log('[HA Chat] proxy_image Fehler:', e.message);
-      if (sendCached()) return;
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: e.message }));
     }
     return;
   }
@@ -898,8 +650,8 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, '0.0.0.0', () => {
   const inferenceUrl = getInferenceUrl();
   const o = getOptions();
-  console.log('HA Chat (Frontend + N8N Proxy + MCP) auf http://0.0.0.0:' + PORT);
-  console.log('[HA Chat] N8N Inference-Webhook: ' + (inferenceUrl ? 'gesetzt (' + inferenceUrl.split('/')[0] + '//' + (inferenceUrl.split('/')[2] || '') + '/…)' : 'nicht konfiguriert'));
+  console.log('HA Chat (Frontend + Backend Proxy + MCP) auf http://0.0.0.0:' + PORT);
+  console.log('[HA Chat] Backend Inference-Webhook: ' + (inferenceUrl ? 'gesetzt (' + inferenceUrl.split('/')[0] + '//' + (inferenceUrl.split('/')[2] || '') + '/…)' : 'nicht konfiguriert'));
   if (o.mcp_enabled && o.mcp_bearer_token) {
     console.log('[HA Chat] MCP Streamable HTTP: /api/mcp (Bearer mcp_bearer_token; stateless)');
   } else if (o.mcp_enabled) {

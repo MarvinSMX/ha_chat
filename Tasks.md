@@ -113,6 +113,16 @@
 - [x] Reindex-Strategie verbessert: Signatur auf semantisch relevante Felder (`semantic_context`) statt volatilem Live-`state`
 - [x] Change-Engine auf strukturiertes Modell ohne sprachliche Heuristik/Schlagwörter umgestellt (`automation_id` + `set_time`/`shift_minutes`)
 - [x] MCP-Prompt bereinigt: keine hardcodierten Stichwortlisten mehr für Stimmungsbegriffe
+- [x] Add-on auf externen Backend-Service als Standard umgestellt (statt n8n): `backend_*` Optionen + Default `agent_backend=backend`
+- [x] `server.js` auf Backend-Webhook-Logik umgestellt (`callBackendWebhook`, Config-Endpoint, Sync-Endpoint, Startup-Logs), mit Legacy-Fallback auf alte `n8n_*` Felder
+- [x] Add-on-`config.yaml` auf `backend_inference_webhook_url` / `backend_sync_webhook_url` / `backend_enabled` umgestellt
+- [x] README von N8N- auf Backend-Service-Terminologie aktualisiert
+- [x] Verifikation: `node --check ha_chat/server.js` erfolgreich
+- [x] App-Cleanup durchgeführt: Graph/Device-Code/Login- und Image-Proxy-Logik aus Add-on entfernt (jetzt nur UI + Chat-Speicher + MCP + Backend-Proxy)
+- [x] Lokalen AI-SDK-Agent-Bypass aus Add-on entfernt (keine Doppel-Agent-Logik mehr)
+- [x] `ha-chat-panel.js` bereinigt: Graph-UI/-Calls entfernt, Bild-URLs direkt gerendert, Fehlermeldungen auf Backend umgestellt
+- [x] `config.yaml` bereinigt: `ai_sdk_*`, `graph_*`, `agent_memory_*`, unnötige Azure-Chat/Resource-Felder entfernt
+- [x] Verifikation: `node --check` für `server.js` und `www/ha-chat-panel.js` erfolgreich
 
 ## Nachfolgende Schritte
 
@@ -127,3 +137,5 @@
 - [ ] Optional: Embedding-Batchgröße/TTL konfigurierbar machen (betriebsspezifisches Tuning)
 - [ ] Optional: Hintergrund-Rebuild für FAISS-Index (asynchron), um erste Query-Latenz zu reduzieren
 - [ ] Optional: Search-Modul weiter in `embedding-client`, `faiss-store`, `query-normalizer` zerlegen
+- [ ] Optional: UI-/Settings-Beschriftungen im Frontend auf `backend_*` umbenennen (rein kosmetisch; API bereits kompatibel)
+- [ ] Optional: Frontend-Bilddarstellung über sicheren Backend-Medienproxy ergänzen (nur nötig, wenn wieder private/geschützte Bild-URLs genutzt werden)
