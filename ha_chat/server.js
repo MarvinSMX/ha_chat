@@ -47,6 +47,7 @@ function getOptions() {
       ha_token:                  (opts.ha_token                  || '').trim(),
       prompt_suggestions: suggestions,
       system_prompt:             systemPrompt,
+      area_scope:                (opts.area_scope || '').trim(),
       mcp_enabled:               opts.mcp_enabled !== false,
       mcp_bearer_token:          (opts.mcp_bearer_token          || '').trim(),
       mcp_entity_allowlist:      (opts.mcp_entity_allowlist      || '').trim(),
@@ -74,6 +75,7 @@ function getOptions() {
     ha_token:                  (process.env.HA_TOKEN                  || '').trim(),
     prompt_suggestions: DEFAULT_SUGGESTIONS,
     system_prompt:             (process.env.SYSTEM_PROMPT             || '').trim() || DEFAULT_SYSTEM_PROMPT,
+    area_scope:                (process.env.AREA_SCOPE || '').trim(),
     mcp_enabled:               process.env.MCP_ENABLED !== '0' && process.env.MCP_ENABLED !== 'false',
     mcp_bearer_token:          (process.env.MCP_BEARER_TOKEN          || '').trim(),
     mcp_entity_allowlist:      (process.env.MCP_ENTITY_ALLOWLIST      || '').trim(),
@@ -281,6 +283,7 @@ const server = http.createServer(async (req, res) => {
       sync_enabled: !!opts.backend_sync_webhook_url,
       prompt_suggestions: opts.prompt_suggestions,
       system_prompt: opts.system_prompt,
+      area_scope: opts.area_scope || '',
     }));
     return;
   }
@@ -430,13 +433,14 @@ const server = http.createServer(async (req, res) => {
     const sessionId = chatId || (data.session_id ? String(data.session_id) : '');
     appendMessage(userId, chatId, 'user', message);
     const opts = getOptions();
-    const areaScope = typeof data.area_scope === 'string' ? data.area_scope.trim() : '';
+    const fromBody = typeof data.area_scope === 'string' ? data.area_scope.trim() : '';
+    const areaScope = fromBody || (opts.area_scope || '').trim();
     const reqSystemPrompt = typeof data.system_prompt === 'string' ? data.system_prompt.trim() : '';
     const payload = {
       message,
       session_id: sessionId,
       system_prompt: reqSystemPrompt || opts.system_prompt || DEFAULT_SYSTEM_PROMPT,
-      area_scope: areaScope || undefined,
+      area_scope: areaScope,
     };
     const inferenceUrl = getInferenceUrl();
     if (!inferenceUrl) {
@@ -580,13 +584,14 @@ const server = http.createServer(async (req, res) => {
     const sessionId = chatId || (data.session_id ? String(data.session_id) : '');
     appendMessage(userId, chatId, 'user', utterance);
     const opts = getOptions();
-    const areaScope = typeof data.area_scope === 'string' ? data.area_scope.trim() : '';
+    const fromBodyA = typeof data.area_scope === 'string' ? data.area_scope.trim() : '';
+    const areaScope = fromBodyA || (opts.area_scope || '').trim();
     const reqSystemPrompt = typeof data.system_prompt === 'string' ? data.system_prompt.trim() : '';
     const actionPayload = {
       message: utterance,
       session_id: sessionId,
       system_prompt: reqSystemPrompt || opts.system_prompt || DEFAULT_SYSTEM_PROMPT,
-      area_scope: areaScope || undefined,
+      area_scope: areaScope,
     };
     const inferenceUrl = getInferenceUrl();
     if (!inferenceUrl) {

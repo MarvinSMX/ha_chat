@@ -22,6 +22,8 @@ options:
   ha_url: ""
   ha_token: ""
   system_prompt: "Du bist ein hilfreicher Home-Assistant-Assistent. Antworte knapp und präzise auf Deutsch. Nutze verfügbare Tools nur wenn nötig und beachte Bereichs-/Raumbeschränkungen."
+  # MCP scope für Backend (wie FAB-Karte); Panel nutzt diesen Wert wenn keine area_scope im Request
+  area_scope: ""
   mcp_enabled: true
   mcp_bearer_token: ""
   mcp_entity_allowlist: ""
@@ -47,6 +49,7 @@ schema:
   ha_url: str
   ha_token: str
   system_prompt: str
+  area_scope: str
   mcp_enabled: bool
   mcp_bearer_token: password
   mcp_entity_allowlist: str

@@ -2,6 +2,7 @@
 
 ## Aktuelle Aufgabe
 
+- [x] Panel vs. FAB: gleicher MCP-Scope — Add-on-Option `area_scope` als Fallback wenn der Request kein `area_scope` mitsendet; Backend `InferenceBody.area_scope` optional (leer); `ha_mcp_url` ohne leeren `scope=`
 - [x] Empty-State-Logo auf Grayscale umgestellt und visuell abgedunkelt
 - [x] `.svg` Content-Type im Server ergänzt (Fix für leere Image-Response)
 - [x] Sidebar-Styling auf Home Assistant Drawer/Sidebar-Look umgestellt (nicht floating)
