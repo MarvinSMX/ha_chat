@@ -31,6 +31,8 @@
   ];
 
   const fetchOpts = { credentials: 'same-origin' };
+  let WEB_WAKEWORD_LOADED = false;
+  let WEB_WAKEWORD_LOADING = null;
 
   function escapeHtml(s) {
     if (s == null) return '';
@@ -402,6 +404,10 @@
       this._speechListening = false;
       this._voiceSendDebounceMs = 700;
       this._voiceSendTimer = null;
+      this._wakewordStream = null;
+      this._wakewordAudioCtx = null;
+      this._wakewordProcessor = null;
+      this._wakewordLastTrigger = 0;
       this.shadowRoot.innerHTML = `<style>:host{display:block;width:0;height:0;overflow:hidden;}</style>`;
     }
 
@@ -572,6 +578,7 @@
       this._unmountOverlay();
       this._unmountPopup();
       this._unmountBackdrop();
+      this._stopWakewordListener();
     }
 
     _apiUrl(path) {
@@ -990,6 +997,96 @@
       }
     }
 
+    _stopWakewordListener() {
+      if (this._wakewordProcessor) {
+        try { this._wakewordProcessor.disconnect(); } catch (_) {}
+        this._wakewordProcessor = null;
+      }
+      if (this._wakewordAudioCtx) {
+        try { this._wakewordAudioCtx.close(); } catch (_) {}
+        this._wakewordAudioCtx = null;
+      }
+      if (this._wakewordStream) {
+        try {
+          this._wakewordStream.getTracks().forEach((t) => t.stop());
+        } catch (_) {}
+        this._wakewordStream = null;
+      }
+    }
+
+    _onWakeTrigger() {
+      const now = Date.now();
+      if (now - this._wakewordLastTrigger < 15000) return;
+      this._wakewordLastTrigger = now;
+      if (!this._open) this._setOpen(true);
+      const inp = this._popupEl && this._popupEl.querySelector('#fab-input');
+      if (inp) inp.focus();
+    }
+
+    _ensureWakewordListener() {
+      if (this._wakewordProcessor || this._wakewordStream) return;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+      const self = this;
+      const loadLib = () => {
+        if (WEB_WAKEWORD_LOADED || (typeof window !== 'undefined' && typeof window.WebWakeWord !== 'undefined')) {
+          WEB_WAKEWORD_LOADED = true;
+          return Promise.resolve();
+        }
+        if (WEB_WAKEWORD_LOADING) return WEB_WAKEWORD_LOADING;
+        WEB_WAKEWORD_LOADING = new Promise((resolve, reject) => {
+          try {
+            const s = document.createElement('script');
+            s.src = 'https://unpkg.com/web-wake-word/dist/web-wake-word.umd.js';
+            s.async = true;
+            s.onload = () => {
+              WEB_WAKEWORD_LOADED = true;
+              WEB_WAKEWORD_LOADING = null;
+              resolve();
+            };
+            s.onerror = (e) => {
+              WEB_WAKEWORD_LOADING = null;
+              reject(e || new Error('web-wake-word Laden fehlgeschlagen'));
+            };
+            (document.head || document.documentElement).appendChild(s);
+          } catch (e) {
+            WEB_WAKEWORD_LOADING = null;
+            reject(e);
+          }
+        });
+        return WEB_WAKEWORD_LOADING;
+      };
+
+      loadLib()
+        .then(() => {
+          if (typeof window === 'undefined' || typeof window.WebWakeWord === 'undefined') return;
+          return navigator.mediaDevices.getUserMedia({ audio: true }).then(async (stream) => {
+            try {
+              self._wakewordStream = stream;
+              const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+              self._wakewordAudioCtx = audioCtx;
+              const source = audioCtx.createMediaStreamSource(stream);
+
+              const WW = window.WebWakeWord;
+              const model = await WW.createModel();
+              const recognizer = await WW.createRecognizer({
+                audioContext: audioCtx,
+                model,
+              });
+
+              recognizer.on('wakeword', function () {
+                self._onWakeTrigger();
+              });
+
+              recognizer.listen(source);
+              self._wakewordProcessor = recognizer;
+            } catch (_) {
+              self._stopWakewordListener();
+            }
+          });
+        })
+        .catch(() => {});
+    }
+
     _toggleVoiceInput() {
       if (this._speechListening) {
         this._stopVoiceInput();
@@ -1004,6 +1101,7 @@
       const input = this._popupEl && this._popupEl.querySelector('#fab-input');
       if (!input) return;
       const baseTextBeforeVoice = (input.value || '').trim();
+      this._ensureWakewordListener();
       const rec = new SpeechRecognition();
       this._speechRec = rec;
       this._speechListening = true;
