@@ -437,6 +437,23 @@ function createAreaResolver(ha_url, ha_token, globalAreaAllowlistRaw) {
           return true;
         });
     },
+    async listAreas(requestedAreaRaw) {
+      const globalSet = await resolveAreaIds(globalAreaAllowlistRaw);
+      const reqSet = await resolveAreaIds(requestedAreaRaw);
+      const reg = await loadRegistries();
+      const out = [];
+      for (const [areaId, name] of reg.areaIdToName.entries()) {
+        if (globalSet && !globalSet.has(areaId)) continue;
+        if (reqSet && !reqSet.has(areaId)) continue;
+        out.push({
+          area_id: areaId,
+          name,
+        });
+      }
+      // Sort für stabilere Ausgabe
+      out.sort((a, b) => String(a.name || a.area_id).localeCompare(String(b.name || b.area_id), 'de'));
+      return out;
+    },
   };
 }
 
@@ -558,6 +575,43 @@ function createMcpServer(ctx) {
         },
       ],
     })
+  );
+
+  server.registerTool(
+    'list_areas',
+    {
+      description:
+        'Listet verfügbare Home-Assistant-Areas (Bereiche), gefiltert durch MCP-Allowlist und optionalen MCP-Scope/area.',
+      inputSchema: {
+        area: z
+          .string()
+          .optional()
+          .describe(
+            'Optionaler zusätzlicher Area-Filter (Name oder area_id). Wenn gesetzt, wird er mit dem MCP-URL-Scope kombiniert.'
+          ),
+        limit: z.number().int().min(1).max(500).optional().describe('Optionales Limit (Standard 100)'),
+        offset: z.number().int().min(0).optional().describe('Optionaler Startindex für Paging (Standard 0)'),
+      },
+    },
+    async ({ area, limit, offset }) => {
+      const lim = limit != null ? limit : 100;
+      const off = offset != null ? offset : 0;
+      try {
+        const rowsAll = await areaResolver.listAreas(getEffectiveArea(area));
+        const total = rowsAll.length;
+        const pageRows = rowsAll.slice(off, off + lim);
+        return textResult({
+          total,
+          returned: pageRows.length,
+          offset: off,
+          limit: lim,
+          has_more: off + pageRows.length < total,
+          areas: pageRows,
+        });
+      } catch (e) {
+        return textResult({ error: String(e.message || e) });
+      }
+    }
   );
 
   server.registerTool(
